@@ -1,0 +1,14 @@
+.{
+    .name = .zora,
+    .version = "0.0.1",
+    .fingerprint = 0x41f159437589986a,
+    .minimum_zig_version = "0.16.0",
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "headers",
+        "example",
+    },
+}
