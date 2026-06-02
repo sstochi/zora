@@ -54,6 +54,8 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    example.root_module.linkSystemLibrary("sdl3", .{ .needed = true });
+
     b.installArtifact(example);
 
     const run_step = b.step("example", "Run the example");

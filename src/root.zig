@@ -3,27 +3,64 @@ const build_options = @import("options");
 const manifest = @import("manifest");
 const builtin = @import("builtin");
 
-const backend = switch (build_options.backend) {
-    .vulkan => @import("vulkan/backend.zig"),
-    else => @compileError("unknown backend"),
-};
-
 pub const BackendType = @TypeOf(build_options.backend);
 pub const build_debug: bool = builtin.mode == .Debug or builtin.mode == .ReleaseSafe;
 pub const build_backend: BackendType = build_options.backend;
 pub const build_version: std.SemanticVersion = std.SemanticVersion.parse(manifest.version) catch @compileError("failed to parse version");
 
+const backend = switch (build_options.backend) {
+    .vulkan => @import("vulkan/backend.zig"),
+    else => @compileError("unknown backend"),
+};
+
+pub const VsyncMode = enum { auto, disabled, enabled, adaptive };
+pub const PowerMode = enum { integrated, discrete };
+
+pub const WindowInfoWin32 = struct {
+    hinstance: ?*anyopaque,
+    hwnd: ?*anyopaque,
+};
+
+pub const WindowInfoUnix = union(enum) {
+    xlib: struct { display: ?*anyopaque, window: c_ulong },
+    xcb: struct { connection: ?*anyopaque, window: u32 },
+    wayland: struct { display: ?*anyopaque, surface: ?*anyopaque },
+};
+
+pub const WindowInfo = switch (builtin.target.os.tag) {
+    .windows => WindowInfoWin32,
+    .linux, .freebsd => WindowInfoUnix,
+    else => @compileError("unknown os"),
+};
+
+pub const Instance = struct {
+    pub const InnerType = backend.Instance;
+    pub const CreateInstanceError = error{UnableToCreateInstance};
+
+    inner: InnerType,
+
+    /// This function should only be called on main thread.
+    pub inline fn create() !Instance {
+        return .{ .inner = try InnerType.create() };
+    }
+
+    /// This function should only be called on main thread.
+    pub inline fn destroy(self: *Instance) void {
+        self.inner.destroy();
+    }
+};
+
 pub const Adapter = struct {
-    pub const Impl = backend.AdapterImpl;
-    pub const CreateError = error{NoViableAdapter};
-    pub const TextureCreateError = error{};
-    pub const SamplerCreateError = error{};
+    pub const Impl = backend.Adapter;
 
-    pub const VsyncMode = enum { auto, disabled, enabled, adaptive };
-    pub const PowerMode = enum { integrated, discrete };
-
+    pub const CreateSwapchainOptions = Swapchain.Info;
     pub const CreateTextureOptions = Texture.Info;
     pub const CreateSamplerOptions = Sampler.Info;
+
+    pub const CreateError = error{ UnableToCreateSurface, NoViableAdapter };
+    pub const SwapchainError = error{UnableToCreateSwapchain};
+    pub const TextureCreateError = error{};
+    pub const SamplerCreateError = error{};
 
     pub const Info = struct {
         vram_mb: ?u32,
@@ -37,37 +74,65 @@ pub const Adapter = struct {
         power_mode: PowerMode,
     };
 
-    pub const CreateOptions = struct {
-        power_mode: PowerMode = .integrated,
-        vsync_mode: VsyncMode = .enabled,
-    };
-
-    impl: Impl,
+    inner: Impl,
 
     /// Attempts to find an adapter matching `preferred_options`.
     /// This function should only be called on main thread.
-    pub inline fn open(preferred_options: CreateOptions) CreateError!Adapter {
-        return .{ .impl = try Impl.open(preferred_options) };
+    pub inline fn open(
+        instance: *Instance,
+        window_info: WindowInfo,
+        power_mode: PowerMode,
+    ) CreateError!Adapter {
+        return .{ .inner = try Impl.open(instance, window_info, power_mode) };
     }
 
     /// This function should only be called on main thread.
     pub inline fn close(self: *Adapter) void {
-        self.impl.close();
+        self.inner.close();
     }
 
     /// This function should only be called on main thread.
-    pub inline fn createSampler(self: *Adapter, options: CreateSamplerOptions) SamplerCreateError!Sampler {
-        return try self.impl.createSampler(options);
+    pub inline fn createSwapchain(
+        self: *Adapter,
+        options: CreateSwapchainOptions,
+    ) SwapchainError!Swapchain {
+        return try self.inner.createSwapchain(options);
     }
 
     /// This function should only be called on main thread.
-    pub inline fn createTexture(self: *Adapter, options: CreateTextureOptions) TextureCreateError!Texture {
-        return try self.impl.createTexture(options);
+    pub inline fn createSampler(
+        self: *Adapter,
+        options: CreateSamplerOptions,
+    ) SamplerCreateError!Sampler {
+        return try self.inner.createSampler(options);
+    }
+
+    /// This function should only be called on main thread.
+    pub inline fn createTexture(
+        self: *Adapter,
+        options: CreateTextureOptions,
+    ) TextureCreateError!Texture {
+        return try self.inner.createTexture(options);
     }
 
     /// This function is safe to call on any thread.
     pub inline fn info(self: *const Adapter) *const Info {
-        return self.impl.info();
+        return self.inner.info();
+    }
+};
+
+pub const Swapchain = struct {
+    pub const InnerType = backend.Swapchain;
+
+    pub const Info = struct {
+        vsync_mode: VsyncMode = .enabled,
+        width: u32,
+        height: u32,
+    };
+
+    /// This function is safe to call on any thread.
+    pub inline fn info(self: *const Sampler) *const Info {
+        return self.inner.info();
     }
 };
 
@@ -90,7 +155,7 @@ pub const Texture = struct {
 
     /// This function is safe to call on any thread.
     pub inline fn info(self: *const Texture) *const Info {
-        return self.impl.info();
+        return self.inner.info();
     }
 };
 
@@ -110,6 +175,6 @@ pub const Sampler = struct {
 
     /// This function is safe to call on any thread.
     pub inline fn info(self: *const Sampler) *const Info {
-        return self.impl.info();
+        return self.inner.info();
     }
 };
