@@ -4,6 +4,7 @@ const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
 const Instance = @import("Instance.zig");
+const Swapchain = @import("Swapchain.zig");
 
 const extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -12,7 +13,7 @@ const extensions: []const [*:0]const u8 = &.{
 const PhysicalDevice = struct {
     name: [256]u8,
     info: zora.Adapter.Info,
-    device: vk.VkPhysicalDevice,
+    handle: vk.VkPhysicalDevice,
     graphics_queue_idx: u32,
     surface_queue_idx: u32,
 
@@ -61,7 +62,7 @@ const PhysicalDevice = struct {
                     else => .integrated,
                 },
             },
-            .device = adapter,
+            .handle = adapter,
             .graphics_queue_idx = graphics_queue_idx,
             .surface_queue_idx = surface_queue_idx,
         };
@@ -79,23 +80,26 @@ const PhysicalDevice = struct {
         a: PhysicalDevice,
         b: PhysicalDevice,
     ) bool {
-        return a.score(power_mode) > b.score(power_mode);
+        return b.score(power_mode) < a.score(power_mode);
     }
 };
 
 const Vtable = struct {
     getDeviceQueue: *const @TypeOf(vk.vkGetDeviceQueue),
+    createSwapchainKHR: *const @TypeOf(vk.vkCreateSwapchainKHR),
+    destroySwapchainKHR: *const @TypeOf(vk.vkDestroySwapchainKHR),
 };
 
 const Self = @This();
 
 vtable: Vtable,
+phy_device: PhysicalDevice,
 instance: *const Instance,
+handle: vk.VkDevice,
 surface: vk.VkSurfaceKHR,
-device: vk.VkDevice,
 graphics_queue: vk.VkQueue,
 surface_queue: vk.VkQueue,
-phy_device: PhysicalDevice,
+swapchain: vk.VkSwapchainKHR,
 
 pub fn open(
     instance: *zora.Instance,
@@ -103,18 +107,15 @@ pub fn open(
     power_mode: zora.PowerMode,
 ) zora.Adapter.CreateError!Self {
     const priority: f32 = 1.0;
+    const inner = &instance.inner;
 
     const surface = try createSurface(&instance.inner, window_info);
-    errdefer instance.inner.vtable.destroySurfaceKHR(
-        instance.inner.handle,
-        surface,
-        null,
-    );
+    errdefer inner.vtable.destroySurfaceKHR(inner.handle, surface, null);
 
-    const phy_device = try findPhyDevice(&instance.inner, surface, power_mode);
-    const info_count = 1 + @intFromBool(
+    const phy_device = try findPhyDevice(inner, surface, power_mode);
+    const info_count = 1 + @as(u32, @intFromBool(
         phy_device.surface_queue_idx != phy_device.graphics_queue_idx,
-    );
+    ));
 
     const infos = [_]vk.VkDeviceQueueCreateInfo{
         .{
@@ -142,20 +143,20 @@ pub fn open(
     };
 
     var device: vk.VkDevice = null;
-    const result = instance.inner.vtable.createDevice(
-        phy_device.device,
+    const result = inner.vtable.createDevice(
+        phy_device.handle,
         &create_info,
         null,
         &device,
     );
 
-    if (result != vk.VK_SUCCESS) {
+    if (!utils.success(result)) {
         return error.NoViableAdapter;
     }
 
     const vtable = utils.loadVtable(
         Vtable,
-        instance.inner.vtable.getDeviceProcAddr,
+        inner.vtable.getDeviceProcAddr,
         device,
     ) orelse return error.NoViableAdapter;
 
@@ -165,13 +166,14 @@ pub fn open(
     vtable.getDeviceQueue(device, phy_device.surface_queue_idx, 0, &surface_queue);
 
     return .{
+        .phy_device = phy_device,
         .vtable = vtable,
         .instance = &instance.inner,
         .surface = surface,
-        .device = device,
+        .handle = device,
         .graphics_queue = graphics_queue,
         .surface_queue = surface_queue,
-        .phy_device = phy_device,
+        .swapchain = null,
     };
 }
 
@@ -181,13 +183,111 @@ pub fn close(self: *Self) void {
         self.surface,
         null,
     );
-    self.instance.vtable.destroyDevice(self.device, null);
+    self.instance.vtable.destroyDevice(self.handle, null);
 }
 
-// pub inline fn createSwapchain(
-//     self: *zora.Adapter,
-//     options: zora.Adapter.CreateSwapchainOptions,
-// ) zora.Adapter.SwapchainError!zora.Swapchain {}
+pub inline fn createSwapchain(
+    self: *Self,
+    options: zora.Adapter.CreateSwapchainOptions,
+) zora.Adapter.SwapchainError!Swapchain {
+    const max_formats: u32 = 128;
+    const max_modes: u32 = 8;
+
+    var capabilities: vk.VkSurfaceCapabilitiesKHR = undefined;
+    var format_buffer: [max_formats]vk.VkSurfaceFormatKHR = undefined;
+    var mode_buffer: [max_modes]vk.VkPresentModeKHR = undefined;
+    var format_count = max_formats;
+    var mode_count = max_modes;
+
+    if (!utils.success(self.instance.vtable.getPhysicalDeviceSurfaceCapabilitiesKHR(
+        self.phy_device.handle,
+        self.surface,
+        &capabilities,
+    ))) {
+        return error.UnableToCreateSwapchain;
+    }
+
+    if (capabilities.maxImageCount == 0) {
+        capabilities.maxImageCount = std.math.maxInt(u32);
+    }
+
+    if (!utils.success(self.instance.vtable.getPhysicalDeviceSurfacePresentModesKHR(
+        self.phy_device.handle,
+        self.surface,
+        &mode_count,
+        &mode_buffer,
+    ))) {
+        return error.UnableToCreateSwapchain;
+    }
+
+    if (!utils.success(self.instance.vtable.getPhysicalDeviceSurfaceFormatsKHR(
+        self.phy_device.handle,
+        self.surface,
+        &format_count,
+        &format_buffer,
+    ))) {
+        return error.UnableToCreateSwapchain;
+    }
+
+    const target_mode: vk.VkPresentModeKHR = switch (options.vsync_mode) {
+        .auto, .enabled => vk.VK_PRESENT_MODE_FIFO_KHR,
+        .adaptive => vk.VK_PRESENT_MODE_FIFO_RELAXED_KHR,
+        .disabled => vk.VK_PRESENT_MODE_IMMEDIATE_KHR,
+    };
+
+    std.mem.sort(vk.VkPresentModeKHR, mode_buffer[0..mode_count], target_mode, presentModeCompareLessThan);
+    std.mem.sort(vk.VkSurfaceFormatKHR, format_buffer[0..format_count], {}, formatCompareLessThan);
+
+    std.log.debug("surface formats:", .{});
+    for (0..format_count) |i| {
+        std.log.debug("\t{?s}", .{std.enums.tagName(utils.Format, @enumFromInt(format_buffer[i].format))});
+    }
+
+    std.log.debug("surface modes:", .{});
+    for (0..mode_count) |i| {
+        std.log.debug("\t{?s}", .{std.enums.tagName(utils.PresentMode, @enumFromInt(mode_buffer[i]))});
+    }
+
+    const same_queue = self.phy_device.graphics_queue_idx == self.phy_device.surface_queue_idx;
+    const queue_indicies: [2]u32 = .{
+        self.phy_device.graphics_queue_idx,
+        self.phy_device.surface_queue_idx,
+    };
+
+    const create_info = vk.VkSwapchainCreateInfoKHR{
+        .sType = vk.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .surface = self.surface,
+        .minImageCount = @min(capabilities.minImageCount + 1, capabilities.maxImageCount),
+
+        .presentMode = mode_buffer[0],
+        .imageFormat = format_buffer[0].format,
+        .imageColorSpace = format_buffer[0].colorSpace,
+        .imageExtent = vk.VkExtent2D{
+            .width = @min(options.width, capabilities.maxImageExtent.width),
+            .height = @min(options.height, capabilities.maxImageExtent.height),
+        },
+        .imageArrayLayers = 1,
+        .imageUsage = vk.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageSharingMode = if (same_queue) vk.VK_SHARING_MODE_EXCLUSIVE else vk.VK_SHARING_MODE_CONCURRENT,
+        .pQueueFamilyIndices = if (same_queue) null else &queue_indicies,
+        .queueFamilyIndexCount = if (same_queue) 0 else @intCast(queue_indicies.len),
+
+        .preTransform = capabilities.currentTransform,
+        .compositeAlpha = vk.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .clipped = vk.VK_TRUE,
+        .oldSwapchain = self.swapchain,
+    };
+
+    var swapchain: vk.VkSwapchainKHR = undefined;
+    const result = self.vtable.createSwapchainKHR(self.handle, &create_info, null, &swapchain);
+    if (!utils.success(result)) return error.UnableToCreateSwapchain;
+
+    return .{
+        .chain_info = options,
+        .handle = swapchain,
+        .adapter = self,
+    };
+}
 
 pub fn info(self: *const Self) *const zora.Adapter.Info {
     return &self.phy_device.info;
@@ -198,7 +298,7 @@ fn createSurface(
     window_info: zora.WindowInfo,
 ) zora.Adapter.CreateError!vk.VkSurfaceKHR {
     return switch (@TypeOf(window_info)) {
-        zora.WindowInfoWin32 => try createSurfaceGeneric(
+        zora.WindowInfoWin32 => createSurfaceGeneric(
             "vkCreateWin32SurfaceKHR",
             instance,
             vk.VkWin32SurfaceCreateInfoKHR{
@@ -209,7 +309,7 @@ fn createSurface(
         ),
 
         zora.WindowInfoUnix => switch (window_info) {
-            .xlib => |xlib| try createSurfaceGeneric(
+            .xlib => |xlib| createSurfaceGeneric(
                 "vkCreateXlibSurfaceKHR",
                 instance,
                 vk.VkXlibSurfaceCreateInfoKHR{
@@ -219,7 +319,7 @@ fn createSurface(
                 },
             ),
 
-            .xcb => |xcb| try createSurfaceGeneric(
+            .xcb => |xcb| createSurfaceGeneric(
                 "vkCreateXcbSurfaceKHR",
                 instance,
                 vk.VkXcbSurfaceCreateInfoKHR{
@@ -229,7 +329,7 @@ fn createSurface(
                 },
             ),
 
-            .wayland => |wayland| try createSurfaceGeneric(
+            .wayland => |wayland| createSurfaceGeneric(
                 "vkCreateWaylandSurfaceKHR",
                 instance,
                 vk.VkWaylandSurfaceCreateInfoKHR{
@@ -240,15 +340,15 @@ fn createSurface(
             ),
         },
 
-        else => return error.UnableToCreateSurface,
-    };
+        else => @compileError("unknown window info"),
+    } orelse return error.UnableToCreateSurface;
 }
 
 fn createSurfaceGeneric(
     comptime name: [*:0]const u8,
     instance: *const Instance,
     create_info: anytype,
-) zora.Adapter.CreateError!vk.VkSurfaceKHR {
+) ?vk.VkSurfaceKHR {
     const F = ?*const fn (
         vk.VkInstance,
         ?*const @TypeOf(create_info),
@@ -259,10 +359,10 @@ fn createSurfaceGeneric(
     var surface: vk.VkSurfaceKHR = null;
     const create_surface = @as(F, @ptrCast(
         instance.get_proc_addr(instance.handle, name),
-    )) orelse return error.UnableToCreateSurface;
+    )) orelse return null;
 
     const result = create_surface(instance.handle, &create_info, null, &surface);
-    return if (result == vk.VK_SUCCESS) surface else error.UnableToCreateSurface;
+    return if (utils.success(result)) surface else null;
 }
 
 fn findPhyDevice(
@@ -273,7 +373,6 @@ fn findPhyDevice(
     const max_extensions: u32 = 128;
     const max_devices: u32 = 16;
 
-    // prepare buffers for vulkan
     var result: vk.VkResult = undefined;
     var ext_buffer: [max_extensions]vk.VkExtensionProperties = undefined;
     var device_buffer: [max_devices]vk.VkPhysicalDevice = undefined;
@@ -286,7 +385,7 @@ fn findPhyDevice(
         &device_buffer,
     );
 
-    if (result != vk.VK_SUCCESS and result != vk.VK_INCOMPLETE) {
+    if (!utils.success(result)) {
         return error.NoViableAdapter;
     }
 
@@ -316,16 +415,19 @@ fn findPhyDevice(
             &ext_buffer,
         );
 
-        if (result != vk.VK_SUCCESS and result != vk.VK_INCOMPLETE) {
+        if (!utils.success(result)) {
             continue;
         }
 
+        // we search for required extensions
         search: for (extensions) |ext| {
             const ext_name = std.mem.span(ext);
             for (0..ext_count) |j| {
                 const name = std.mem.sliceTo(&ext_buffer[j].extensionName, 0);
                 if (std.mem.eql(u8, ext_name, name)) continue :search;
             }
+
+            // bail if haven't found even one
             continue :outer;
         }
 
@@ -343,12 +445,12 @@ fn findPhyDevice(
 
             // check if queue supprots graphics
             if ((queue_buffer[j].queueFlags & vk.VK_QUEUE_GRAPHICS_BIT) != 0) {
-                graphics_queue_idx = @intCast(i);
+                graphics_queue_idx = @intCast(j);
             }
 
             // check if queue supports our surface
             if (supports_surface != 0) {
-                surface_queue_idx = @intCast(i);
+                surface_queue_idx = @intCast(j);
             }
         }
 
@@ -376,4 +478,33 @@ fn findPhyDevice(
     }
 
     return if (info_count != 0) infos[0] else error.NoViableAdapter;
+}
+
+fn formatCompareLessThan(_: void, a: vk.VkSurfaceFormatKHR, b: vk.VkSurfaceFormatKHR) bool {
+    const score_fn = struct {
+        pub fn impl(self: vk.VkSurfaceFormatKHR) u32 {
+            const format_score: u32 = switch (@as(utils.Format, @enumFromInt(self.format))) {
+                .b8g8r8a8_srgb, .r8g8b8a8_srgb => 2,
+                .b8g8r8a8_unorm, .r8g8b8a8_unorm => 1,
+                else => 0,
+            };
+
+            const colorspace_score: u32 = switch (@as(utils.ColorSpace, @enumFromInt(self.colorSpace))) {
+                // .extended_srgb_linear_ext => 20,
+                // .hdr10_st2084_ext, .hdr10_hlg_ext => 20,
+                .srgb_nonlinear_khr => 10,
+                else => 0,
+            };
+
+            return format_score + colorspace_score;
+        }
+    }.impl;
+
+    return score_fn(b) < score_fn(a);
+}
+
+fn presentModeCompareLessThan(target: vk.VkPresentModeKHR, a: vk.VkPresentModeKHR, b: vk.VkPresentModeKHR) bool {
+    const score_a = @intFromBool(a == target);
+    const score_b = @intFromBool(b == target);
+    return score_b < score_a;
 }

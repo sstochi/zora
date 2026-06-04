@@ -50,6 +50,7 @@ pub const Instance = struct {
     }
 };
 
+/// Must never outlive parent `Instance`.
 pub const Adapter = struct {
     pub const Impl = backend.Adapter;
 
@@ -96,7 +97,7 @@ pub const Adapter = struct {
         self: *Adapter,
         options: CreateSwapchainOptions,
     ) SwapchainError!Swapchain {
-        return try self.inner.createSwapchain(options);
+        return .{ .inner = try self.inner.createSwapchain(options) };
     }
 
     /// This function should only be called on main thread.
@@ -104,7 +105,7 @@ pub const Adapter = struct {
         self: *Adapter,
         options: CreateSamplerOptions,
     ) SamplerCreateError!Sampler {
-        return try self.inner.createSampler(options);
+        return .{ .inner = try self.inner.createSampler(options) };
     }
 
     /// This function should only be called on main thread.
@@ -112,7 +113,7 @@ pub const Adapter = struct {
         self: *Adapter,
         options: CreateTextureOptions,
     ) TextureCreateError!Texture {
-        return try self.inner.createTexture(options);
+        return .{ .inner = try self.inner.createTexture(options) };
     }
 
     /// This function is safe to call on any thread.
@@ -121,6 +122,7 @@ pub const Adapter = struct {
     }
 };
 
+/// Must never outlive parent `Adapter`.
 pub const Swapchain = struct {
     pub const InnerType = backend.Swapchain;
 
@@ -130,12 +132,20 @@ pub const Swapchain = struct {
         height: u32,
     };
 
+    inner: InnerType,
+
+    /// This function should only be called on main thread.
+    pub inline fn destroy(self: *Swapchain) void {
+        self.inner.destroy();
+    }
+
     /// This function is safe to call on any thread.
-    pub inline fn info(self: *const Sampler) *const Info {
+    pub inline fn info(self: *const Swapchain) *const Info {
         return self.inner.info();
     }
 };
 
+/// Must never outlive parent `Adapter`.
 pub const Texture = struct {
     pub const Usage = packed struct {
         read: bool,
@@ -159,6 +169,7 @@ pub const Texture = struct {
     }
 };
 
+/// Must never outlive parent `Adapter`.
 pub const Sampler = struct {
     pub const Info = struct {
         pub const Filter = enum { linear, nearest };

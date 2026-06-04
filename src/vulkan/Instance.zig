@@ -46,8 +46,12 @@ const Vtable = struct {
 
     enumeratePhysicalDevices: *const @TypeOf(vk.vkEnumeratePhysicalDevices),
     enumerateDeviceExtensionProperties: *const @TypeOf(vk.vkEnumerateDeviceExtensionProperties),
+
     getPhysicalDeviceQueueFamilyProperties: *const @TypeOf(vk.vkGetPhysicalDeviceQueueFamilyProperties),
     getPhysicalDeviceSurfaceSupportKHR: *const @TypeOf(vk.vkGetPhysicalDeviceSurfaceSupportKHR),
+    getPhysicalDeviceSurfaceCapabilitiesKHR: *const @TypeOf(vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR),
+    getPhysicalDeviceSurfaceFormatsKHR: *const @TypeOf(vk.vkGetPhysicalDeviceSurfaceFormatsKHR),
+    getPhysicalDeviceSurfacePresentModesKHR: *const @TypeOf(vk.vkGetPhysicalDeviceSurfacePresentModesKHR),
     getPhysicalDeviceProperties: *const @TypeOf(vk.vkGetPhysicalDeviceProperties),
     getPhysicalDeviceMemoryProperties: *const @TypeOf(vk.vkGetPhysicalDeviceMemoryProperties),
 };
@@ -103,7 +107,7 @@ pub fn create() zora.Instance.CreateInstanceError!Self {
 
     // query all extensions
     result = enum_extensions(null, &query_count, &query_buffer);
-    if (result != vk.VK_SUCCESS and result != vk.VK_INCOMPLETE) {
+    if (!utils.success(result)) {
         return error.UnableToCreateInstance;
     }
 
@@ -145,7 +149,7 @@ pub fn create() zora.Instance.CreateInstanceError!Self {
     // create vulkan instance
     var instance: vk.VkInstance = null;
     result = createInstance(&create_info, null, &instance);
-    if (result != vk.VK_SUCCESS) return error.UnableToCreateInstance;
+    if (!utils.success(result)) return error.UnableToCreateInstance;
 
     return .{
         // load virtual functions

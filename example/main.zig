@@ -22,8 +22,10 @@ pub fn main(_: std.process.Init) !void {
         const surface = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, null);
         break :blk try zora.Adapter.open(&instance, .{ .wayland = .{ .display = display, .surface = surface } }, .discrete);
     } else return error.InvalidBackend;
-
     defer adapter.close();
+
+    var swapchain = try adapter.createSwapchain(.{ .width = 640, .height = 360, .vsync_mode = .adaptive });
+    defer swapchain.destroy();
 
     const info = adapter.info();
     std.debug.print("{any}\n", .{info});
