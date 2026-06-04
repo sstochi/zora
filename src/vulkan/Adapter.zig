@@ -1,6 +1,9 @@
 const std = @import("std");
 const vk = @import("vulkan");
+const utils = @import("utils.zig");
 const zora = @import("../root.zig");
+
+const Instance = @import("Instance.zig");
 
 const extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -13,13 +16,25 @@ const PhysicalDevice = struct {
     graphics_queue_idx: u32,
     surface_queue_idx: u32,
 
-    pub fn create(adapter: vk.VkPhysicalDevice, graphics_queue_idx: u32, surface_queue_idx: u32) PhysicalDevice {
+    pub fn create(
+        instance: *const Instance,
+        adapter: vk.VkPhysicalDevice,
+        graphics_queue_idx: u32,
+        surface_queue_idx: u32,
+    ) PhysicalDevice {
         const bytes_in_mb = 1000 * 1000;
         var prop: vk.VkPhysicalDeviceProperties = undefined;
         var mem_prop: vk.VkPhysicalDeviceMemoryProperties = undefined;
 
-        vk.vkGetPhysicalDeviceProperties(adapter, &prop);
-        vk.vkGetPhysicalDeviceMemoryProperties(adapter, &mem_prop);
+        instance.vtable.getPhysicalDeviceProperties(
+            adapter,
+            &prop,
+        );
+
+        instance.vtable.getPhysicalDeviceMemoryProperties(
+            adapter,
+            &mem_prop,
+        );
 
         var vram_bytes: u64 = 0;
         for (mem_prop.memoryHeaps[0..mem_prop.memoryHeapCount]) |heap| {
@@ -68,9 +83,14 @@ const PhysicalDevice = struct {
     }
 };
 
+const Vtable = struct {
+    getDeviceQueue: *const @TypeOf(vk.vkGetDeviceQueue),
+};
+
 const Self = @This();
 
-instance: vk.VkInstance,
+vtable: Vtable,
+instance: *const Instance,
 surface: vk.VkSurfaceKHR,
 device: vk.VkDevice,
 graphics_queue: vk.VkQueue,
@@ -82,25 +102,86 @@ pub fn open(
     window_info: zora.WindowInfo,
     power_mode: zora.PowerMode,
 ) zora.Adapter.CreateError!Self {
-    const surface = try createSurface(instance.inner.handle, window_info);
-    errdefer vk.vkDestroySurfaceKHR(instance.inner.handle, surface, null);
+    const priority: f32 = 1.0;
 
-    const phy = try findPhyDevice(instance.inner.handle, surface, power_mode);
-    const data = try createDevice(phy);
+    const surface = try createSurface(&instance.inner, window_info);
+    errdefer instance.inner.vtable.destroySurfaceKHR(
+        instance.inner.handle,
+        surface,
+        null,
+    );
+
+    const phy_device = try findPhyDevice(&instance.inner, surface, power_mode);
+    const info_count = 1 + @intFromBool(
+        phy_device.surface_queue_idx != phy_device.graphics_queue_idx,
+    );
+
+    const infos = [_]vk.VkDeviceQueueCreateInfo{
+        .{
+            .sType = vk.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .queueFamilyIndex = phy_device.graphics_queue_idx,
+            .queueCount = 1,
+            .pQueuePriorities = &priority,
+        },
+        .{
+            .sType = vk.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .queueFamilyIndex = phy_device.surface_queue_idx,
+            .queueCount = 1,
+            .pQueuePriorities = &priority,
+        },
+    };
+
+    const features = vk.VkPhysicalDeviceFeatures{};
+    const create_info = vk.VkDeviceCreateInfo{
+        .sType = vk.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pQueueCreateInfos = &infos,
+        .queueCreateInfoCount = info_count,
+        .pEnabledFeatures = &features,
+        .ppEnabledExtensionNames = extensions.ptr,
+        .enabledExtensionCount = @intCast(extensions.len),
+    };
+
+    var device: vk.VkDevice = null;
+    const result = instance.inner.vtable.createDevice(
+        phy_device.device,
+        &create_info,
+        null,
+        &device,
+    );
+
+    if (result != vk.VK_SUCCESS) {
+        return error.NoViableAdapter;
+    }
+
+    const vtable = utils.loadVtable(
+        Vtable,
+        instance.inner.vtable.getDeviceProcAddr,
+        device,
+    ) orelse return error.NoViableAdapter;
+
+    var graphics_queue: vk.VkQueue = null;
+    var surface_queue: vk.VkQueue = null;
+    vtable.getDeviceQueue(device, phy_device.graphics_queue_idx, 0, &graphics_queue);
+    vtable.getDeviceQueue(device, phy_device.surface_queue_idx, 0, &surface_queue);
 
     return .{
-        .instance = instance.inner.handle,
+        .vtable = vtable,
+        .instance = &instance.inner,
         .surface = surface,
-        .device = data.device,
-        .graphics_queue = data.graphics_queue,
-        .surface_queue = data.surface_queue,
-        .phy_device = phy,
+        .device = device,
+        .graphics_queue = graphics_queue,
+        .surface_queue = surface_queue,
+        .phy_device = phy_device,
     };
 }
 
 pub fn close(self: *Self) void {
-    vk.vkDestroySurfaceKHR(self.instance, self.surface, null);
-    vk.vkDestroyDevice(self.device, null);
+    self.instance.vtable.destroySurfaceKHR(
+        self.instance.handle,
+        self.surface,
+        null,
+    );
+    self.instance.vtable.destroyDevice(self.device, null);
 }
 
 // pub inline fn createSwapchain(
@@ -113,12 +194,11 @@ pub fn info(self: *const Self) *const zora.Adapter.Info {
 }
 
 fn createSurface(
-    instance: vk.VkInstance,
+    instance: *const Instance,
     window_info: zora.WindowInfo,
 ) zora.Adapter.CreateError!vk.VkSurfaceKHR {
     return switch (@TypeOf(window_info)) {
         zora.WindowInfoWin32 => try createSurfaceGeneric(
-            vk.PFN_vkCreateWin32SurfaceKHR,
             "vkCreateWin32SurfaceKHR",
             instance,
             vk.VkWin32SurfaceCreateInfoKHR{
@@ -130,7 +210,6 @@ fn createSurface(
 
         zora.WindowInfoUnix => switch (window_info) {
             .xlib => |xlib| try createSurfaceGeneric(
-                vk.PFN_vkCreateXlibSurfaceKHR,
                 "vkCreateXlibSurfaceKHR",
                 instance,
                 vk.VkXlibSurfaceCreateInfoKHR{
@@ -141,7 +220,6 @@ fn createSurface(
             ),
 
             .xcb => |xcb| try createSurfaceGeneric(
-                vk.PFN_vkCreateXcbSurfaceKHR,
                 "vkCreateXcbSurfaceKHR",
                 instance,
                 vk.VkXcbSurfaceCreateInfoKHR{
@@ -152,7 +230,6 @@ fn createSurface(
             ),
 
             .wayland => |wayland| try createSurfaceGeneric(
-                vk.PFN_vkCreateWaylandSurfaceKHR,
                 "vkCreateWaylandSurfaceKHR",
                 instance,
                 vk.VkWaylandSurfaceCreateInfoKHR{
@@ -168,19 +245,28 @@ fn createSurface(
 }
 
 fn createSurfaceGeneric(
-    comptime T: type,
     comptime name: [*:0]const u8,
-    instance: vk.VkInstance,
+    instance: *const Instance,
     create_info: anytype,
 ) zora.Adapter.CreateError!vk.VkSurfaceKHR {
+    const F = ?*const fn (
+        vk.VkInstance,
+        ?*const @TypeOf(create_info),
+        ?*const vk.VkAllocationCallbacks,
+        ?*vk.VkSurfaceKHR,
+    ) callconv(.c) vk.VkResult;
+
     var surface: vk.VkSurfaceKHR = null;
-    const create_surface = @as(T, @ptrCast(vk.vkGetInstanceProcAddr(instance, name))) orelse return error.UnableToCreateSurface;
-    const result = create_surface(instance, &create_info, null, &surface);
+    const create_surface = @as(F, @ptrCast(
+        instance.get_proc_addr(instance.handle, name),
+    )) orelse return error.UnableToCreateSurface;
+
+    const result = create_surface(instance.handle, &create_info, null, &surface);
     return if (result == vk.VK_SUCCESS) surface else error.UnableToCreateSurface;
 }
 
 fn findPhyDevice(
-    instance: vk.VkInstance,
+    instance: *const Instance,
     surface: vk.VkSurfaceKHR,
     power_mode: zora.PowerMode,
 ) zora.Adapter.CreateError!PhysicalDevice {
@@ -194,7 +280,12 @@ fn findPhyDevice(
     var device_count: u32 = max_devices;
 
     // enumerate all physical devices
-    result = vk.vkEnumeratePhysicalDevices(instance, &device_count, &device_buffer);
+    result = instance.vtable.enumeratePhysicalDevices(
+        instance.handle,
+        &device_count,
+        &device_buffer,
+    );
+
     if (result != vk.VK_SUCCESS and result != vk.VK_INCOMPLETE) {
         return error.NoViableAdapter;
     }
@@ -210,9 +301,21 @@ fn findPhyDevice(
         var queue_count = max_devices;
         var ext_count = max_extensions;
 
-        // finally, query its queue family props and extensions
-        vk.vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_count, &queue_buffer);
-        result = vk.vkEnumerateDeviceExtensionProperties(device, null, &ext_count, &ext_buffer);
+        // finally, query its queue family props...
+        instance.vtable.getPhysicalDeviceQueueFamilyProperties(
+            device,
+            &queue_count,
+            &queue_buffer,
+        );
+
+        // ... and its extensions
+        result = instance.vtable.enumerateDeviceExtensionProperties(
+            device,
+            null,
+            &ext_count,
+            &ext_buffer,
+        );
+
         if (result != vk.VK_SUCCESS and result != vk.VK_INCOMPLETE) {
             continue;
         }
@@ -229,7 +332,7 @@ fn findPhyDevice(
         var graphics_queue_idx: ?u32 = null;
         var surface_queue_idx: ?u32 = null;
         for (0..queue_count) |j| {
-            if (vk.vkGetPhysicalDeviceSurfaceSupportKHR(
+            if (instance.vtable.getPhysicalDeviceSurfaceSupportKHR(
                 device,
                 @intCast(j),
                 surface,
@@ -251,6 +354,7 @@ fn findPhyDevice(
 
         // if it doesn't support either of those, we bail
         infos[info_count] = PhysicalDevice.create(
+            instance,
             device,
             graphics_queue_idx orelse continue,
             surface_queue_idx orelse continue,
@@ -272,56 +376,4 @@ fn findPhyDevice(
     }
 
     return if (info_count != 0) infos[0] else error.NoViableAdapter;
-}
-
-fn createDevice(phy: PhysicalDevice) zora.Adapter.CreateError!struct {
-    device: vk.VkDevice,
-    graphics_queue: vk.VkQueue,
-    surface_queue: vk.VkQueue,
-} {
-    const priority: f32 = 1.0;
-    const features = vk.VkPhysicalDeviceFeatures{};
-
-    const info_count = 1 + @intFromBool(
-        phy.surface_queue_idx != phy.graphics_queue_idx,
-    );
-
-    const infos = [_]vk.VkDeviceQueueCreateInfo{
-        .{
-            .sType = vk.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-            .queueFamilyIndex = phy.graphics_queue_idx,
-            .queueCount = 1,
-            .pQueuePriorities = &priority,
-        },
-        .{
-            .sType = vk.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-            .queueFamilyIndex = phy.surface_queue_idx,
-            .queueCount = 1,
-            .pQueuePriorities = &priority,
-        },
-    };
-
-    const create_info = vk.VkDeviceCreateInfo{
-        .sType = vk.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pQueueCreateInfos = &infos,
-        .queueCreateInfoCount = info_count,
-        .pEnabledFeatures = &features,
-        .ppEnabledExtensionNames = extensions.ptr,
-        .enabledExtensionCount = @intCast(extensions.len),
-    };
-
-    var device: vk.VkDevice = null;
-    const result = vk.vkCreateDevice(phy.device, &create_info, null, &device);
-    if (result != vk.VK_SUCCESS) return error.NoViableAdapter;
-
-    var graphics_queue: vk.VkQueue = null;
-    var surface_queue: vk.VkQueue = null;
-    vk.vkGetDeviceQueue(device, phy.graphics_queue_idx, 0, &graphics_queue);
-    vk.vkGetDeviceQueue(device, phy.surface_queue_idx, 0, &surface_queue);
-
-    return .{
-        .device = device,
-        .graphics_queue = graphics_queue,
-        .surface_queue = surface_queue,
-    };
 }

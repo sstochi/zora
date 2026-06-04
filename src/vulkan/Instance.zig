@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const vk = @import("vulkan");
+const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
 const validation_layers: []const [*:0]const u8 = switch (zora.build_debug) {
@@ -27,9 +28,36 @@ const optional_extensions: []const [*:0]const u8 = switch (builtin.os.tag) {
 };
 const max_optional_extensions = 4;
 
+const vulkan_lib_name = switch (builtin.os.tag) {
+    .windows => "vulkan-1.dll",
+    .linux, .freebsd => "libvulkan.so",
+    .macos => "libvulkan.dylib",
+    else => @compileError("unknown os"),
+};
+
+const Vtable = struct {
+    getDeviceProcAddr: *const @TypeOf(vk.vkGetDeviceProcAddr),
+
+    createDevice: *const @TypeOf(vk.vkCreateDevice),
+
+    destroyInstance: *const @TypeOf(vk.vkDestroyInstance),
+    destroyDevice: *const @TypeOf(vk.vkDestroyDevice),
+    destroySurfaceKHR: *const @TypeOf(vk.vkDestroySurfaceKHR),
+
+    enumeratePhysicalDevices: *const @TypeOf(vk.vkEnumeratePhysicalDevices),
+    enumerateDeviceExtensionProperties: *const @TypeOf(vk.vkEnumerateDeviceExtensionProperties),
+    getPhysicalDeviceQueueFamilyProperties: *const @TypeOf(vk.vkGetPhysicalDeviceQueueFamilyProperties),
+    getPhysicalDeviceSurfaceSupportKHR: *const @TypeOf(vk.vkGetPhysicalDeviceSurfaceSupportKHR),
+    getPhysicalDeviceProperties: *const @TypeOf(vk.vkGetPhysicalDeviceProperties),
+    getPhysicalDeviceMemoryProperties: *const @TypeOf(vk.vkGetPhysicalDeviceMemoryProperties),
+};
+
 const Self = @This();
 
+vtable: Vtable,
 handle: vk.VkInstance,
+get_proc_addr: *const @TypeOf(vk.vkGetInstanceProcAddr),
+loader_handle: std.DynLib,
 
 pub fn create() zora.Instance.CreateInstanceError!Self {
     const max_properties = 128;
@@ -53,13 +81,28 @@ pub fn create() zora.Instance.CreateInstanceError!Self {
     var query_buffer: [max_properties]vk.VkExtensionProperties = undefined;
     var query_count: u32 = max_properties;
 
-    // query all extensions
-    result = vk.vkEnumerateInstanceExtensionProperties(
-        null,
-        &query_count,
-        &query_buffer,
+    // load vulkan lib
+    var loader_handle = std.DynLib.open(vulkan_lib_name) catch
+        return error.UnableToCreateInstance;
+    errdefer loader_handle.close();
+
+    const get_instance_proc_addr = loader_handle.lookup(
+        *const @TypeOf(vk.vkGetInstanceProcAddr),
+        "vkGetInstanceProcAddr",
+    ) orelse return error.UnableToCreateInstance;
+
+    const enum_extensions: *const @TypeOf(vk.vkEnumerateInstanceExtensionProperties) = @ptrCast(
+        get_instance_proc_addr(null, "vkEnumerateInstanceExtensionProperties") orelse
+            return error.UnableToCreateInstance,
     );
 
+    const createInstance: *const @TypeOf(vk.vkCreateInstance) = @ptrCast(
+        get_instance_proc_addr(null, "vkCreateInstance") orelse
+            return error.UnableToCreateInstance,
+    );
+
+    // query all extensions
+    result = enum_extensions(null, &query_count, &query_buffer);
     if (result != vk.VK_SUCCESS and result != vk.VK_INCOMPLETE) {
         return error.UnableToCreateInstance;
     }
@@ -69,13 +112,13 @@ pub fn create() zora.Instance.CreateInstanceError!Self {
     var ext_count = extensions.len;
     @memcpy(ext_buffer[0..extensions.len], extensions);
 
-    // enable supported optional extensions
     std.log.debug("vulkan instance extensions:", .{});
     for (extensions) |ext| {
         const name = std.mem.span(ext);
         std.log.debug("\t\"{s}\"", .{name});
     }
 
+    // enable supported optional extensions
     for (optional_extensions) |ext| {
         const opt_name = std.mem.span(ext);
 
@@ -101,12 +144,24 @@ pub fn create() zora.Instance.CreateInstanceError!Self {
 
     // create vulkan instance
     var instance: vk.VkInstance = null;
-    result = vk.vkCreateInstance(&create_info, null, &instance);
+    result = createInstance(&create_info, null, &instance);
     if (result != vk.VK_SUCCESS) return error.UnableToCreateInstance;
 
-    return .{ .handle = instance };
+    return .{
+        // load virtual functions
+        .vtable = utils.loadVtable(
+            Vtable,
+            get_instance_proc_addr,
+            instance,
+        ) orelse return error.UnableToCreateInstance,
+
+        .handle = instance,
+        .loader_handle = loader_handle,
+        .get_proc_addr = get_instance_proc_addr,
+    };
 }
 
 pub fn destroy(self: *Self) void {
-    vk.vkDestroyInstance(self.handle, null);
+    self.vtable.destroyInstance(self.handle, null);
+    self.loader_handle.close();
 }

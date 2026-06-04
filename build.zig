@@ -11,10 +11,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const backend = b.option(BackendType, "zora_backend", "Selects zora's backend.") orelse .vulkan;
-    const link_libvulkan = b.option(bool, "zora_link_libvulkan", "Whether to link against libvulkan or use dynamic loader.") orelse true;
-
     options.addOption(BackendType, "backend", backend);
-    options.addOption(bool, "link_libvulkan", link_libvulkan);
 
     const translate_headers = b.addTranslateC(.{
         .optimize = optimize,
@@ -35,13 +32,6 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    switch (backend) {
-        .vulkan => {
-            if (link_libvulkan) zora.linkSystemLibrary("vulkan", .{ .needed = true });
-        },
-        .opengl => {},
-    }
-
     const example = b.addExecutable(.{
         .name = "example",
         .use_llvm = true,
@@ -55,6 +45,7 @@ pub fn build(b: *std.Build) void {
     });
 
     example.root_module.linkSystemLibrary("sdl3", .{ .needed = true });
+    example.root_module.linkSystemLibrary("vulkan", .{ .needed = true });
 
     b.installArtifact(example);
 
