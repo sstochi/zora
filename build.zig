@@ -45,7 +45,6 @@ pub fn build(b: *std.Build) void {
     });
 
     example.root_module.linkSystemLibrary("sdl3", .{ .needed = true });
-    example.root_module.linkSystemLibrary("vulkan", .{ .needed = true });
 
     b.installArtifact(example);
 

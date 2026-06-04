@@ -86,8 +86,14 @@ const PhysicalDevice = struct {
 
 const Vtable = struct {
     getDeviceQueue: *const @TypeOf(vk.vkGetDeviceQueue),
+    createSemaphore: *const @TypeOf(vk.vkCreateSemaphore),
     createSwapchainKHR: *const @TypeOf(vk.vkCreateSwapchainKHR),
+
+    destroySemaphore: *const @TypeOf(vk.vkDestroySemaphore),
     destroySwapchainKHR: *const @TypeOf(vk.vkDestroySwapchainKHR),
+
+    acquireNextImageKHR: *const @TypeOf(vk.vkAcquireNextImageKHR),
+    queuePresentKHR: *const @TypeOf(vk.vkQueuePresentKHR),
 };
 
 const Self = @This();
@@ -99,7 +105,6 @@ handle: vk.VkDevice,
 surface: vk.VkSurfaceKHR,
 graphics_queue: vk.VkQueue,
 surface_queue: vk.VkQueue,
-swapchain: vk.VkSwapchainKHR,
 
 pub fn open(
     instance: *zora.Instance,
@@ -173,7 +178,6 @@ pub fn open(
         .handle = device,
         .graphics_queue = graphics_queue,
         .surface_queue = surface_queue,
-        .swapchain = null,
     };
 }
 
@@ -275,18 +279,18 @@ pub inline fn createSwapchain(
         .preTransform = capabilities.currentTransform,
         .compositeAlpha = vk.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
         .clipped = vk.VK_TRUE,
-        .oldSwapchain = self.swapchain,
     };
 
     var swapchain: vk.VkSwapchainKHR = undefined;
     const result = self.vtable.createSwapchainKHR(self.handle, &create_info, null, &swapchain);
     if (!utils.success(result)) return error.UnableToCreateSwapchain;
+    errdefer self.vtable.destroySwapchainKHR(self.handle, swapchain, null);
 
-    return .{
-        .chain_info = options,
-        .handle = swapchain,
-        .adapter = self,
-    };
+    return Swapchain.create(
+        self,
+        swapchain,
+        options,
+    ) orelse return error.UnableToCreateSwapchain;
 }
 
 pub fn info(self: *const Self) *const zora.Adapter.Info {

@@ -54,6 +54,8 @@ const Vtable = struct {
     getPhysicalDeviceSurfacePresentModesKHR: *const @TypeOf(vk.vkGetPhysicalDeviceSurfacePresentModesKHR),
     getPhysicalDeviceProperties: *const @TypeOf(vk.vkGetPhysicalDeviceProperties),
     getPhysicalDeviceMemoryProperties: *const @TypeOf(vk.vkGetPhysicalDeviceMemoryProperties),
+
+    queuePresentKHR: *const @TypeOf(vk.vkQueuePresentKHR),
 };
 
 const Self = @This();

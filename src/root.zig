@@ -139,6 +139,10 @@ pub const Swapchain = struct {
         self.inner.destroy();
     }
 
+    pub inline fn present(self: *Swapchain) void {
+        self.inner.present();
+    }
+
     /// This function is safe to call on any thread.
     pub inline fn info(self: *const Swapchain) *const Info {
         return self.inner.info();
