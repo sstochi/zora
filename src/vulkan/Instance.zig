@@ -5,7 +5,8 @@ const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
 const validation_layers: []const [*:0]const u8 = switch (zora.build_debug) {
-    true => &.{"VK_LAYER_KHRONOS_validation"},
+    // true => &.{"VK_LAYER_KHRONOS_validation"},
+    true => &.{},
     false => &.{},
 };
 
@@ -28,11 +29,60 @@ const optional_extensions: []const [*:0]const u8 = switch (builtin.os.tag) {
 };
 const max_optional_extensions = 4;
 
-const vulkan_lib_name = switch (builtin.os.tag) {
+const library_name: [:0]const u8 = switch (builtin.os.tag) {
     .windows => "vulkan-1.dll",
     .linux, .freebsd => "libvulkan.so",
     .macos => "libvulkan.dylib",
     else => @compileError("unknown os"),
+};
+
+const VulkanLoader = switch (builtin.os.tag) {
+    // zig 0.16.0 removed windows from std.DynLib... Thanks, Andrew!
+    .windows => struct {
+        const BOOL = c_int;
+        const HMODULE = ?*anyopaque;
+        const FARPROC = ?*const fn () callconv(.c) c_int;
+
+        extern fn LoadLibraryA(lpLibFileName: [*:0]const u8) callconv(.c) HMODULE;
+        extern fn GetProcAddress(hModule: HMODULE, lpProcName: [*:0]const u8) callconv(.c) FARPROC;
+        extern fn FreeLibrary(hLibModule: HMODULE) callconv(.c) BOOL;
+
+        hmodule: HMODULE,
+
+        pub fn open() ?VulkanLoader {
+            const hmodule = LoadLibraryA(library_name.ptr);
+            if (hmodule == null) return null;
+            return .{ .hmodule = hmodule };
+        }
+
+        pub fn close(self: *VulkanLoader) void {
+            _ = FreeLibrary(self.hmodule);
+        }
+
+        pub fn lookup(self: *VulkanLoader, comptime T: type, name: [:0]const u8) ?T {
+            return @ptrCast(GetProcAddress(self.hmodule, name.ptr));
+        }
+    },
+
+    else => struct {
+        handle: std.DynLib,
+
+        pub fn open() ?VulkanLoader {
+            return .{
+                .handle = std.DynLib.open(
+                    library_name,
+                ) catch return null,
+            };
+        }
+
+        pub fn close(self: *VulkanLoader) void {
+            self.handle.close();
+        }
+
+        pub fn lookup(self: *VulkanLoader, comptime T: type, name: [:0]const u8) ?T {
+            return @ptrCast(self.handle.lookup(T, name));
+        }
+    },
 };
 
 const Vtable = struct {
@@ -63,7 +113,7 @@ const Self = @This();
 vtable: Vtable,
 handle: vk.VkInstance,
 get_proc_addr: *const @TypeOf(vk.vkGetInstanceProcAddr),
-loader_handle: std.DynLib,
+loader: VulkanLoader,
 
 pub fn create() zora.Instance.CreateInstanceError!Self {
     const max_properties = 128;
@@ -88,11 +138,12 @@ pub fn create() zora.Instance.CreateInstanceError!Self {
     var query_count: u32 = max_properties;
 
     // load vulkan lib
-    var loader_handle = std.DynLib.open(vulkan_lib_name) catch
+    var loader = VulkanLoader.open() orelse {
         return error.UnableToCreateInstance;
-    errdefer loader_handle.close();
+    };
+    errdefer loader.close();
 
-    const get_instance_proc_addr = loader_handle.lookup(
+    const get_instance_proc_addr = loader.lookup(
         *const @TypeOf(vk.vkGetInstanceProcAddr),
         "vkGetInstanceProcAddr",
     ) orelse return error.UnableToCreateInstance;
@@ -162,12 +213,12 @@ pub fn create() zora.Instance.CreateInstanceError!Self {
         ) orelse return error.UnableToCreateInstance,
 
         .handle = instance,
-        .loader_handle = loader_handle,
+        .loader = loader,
         .get_proc_addr = get_instance_proc_addr,
     };
 }
 
 pub fn destroy(self: *Self) void {
     self.vtable.destroyInstance(self.handle, null);
-    self.loader_handle.close();
+    self.loader.close();
 }

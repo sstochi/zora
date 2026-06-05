@@ -307,8 +307,8 @@ fn createSurface(
             instance,
             vk.VkWin32SurfaceCreateInfoKHR{
                 .sType = vk.VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
-                .hinstance = window_info.hinstance,
-                .hwnd = window_info.hwnd,
+                .hinstance = @ptrCast(@alignCast(window_info.hinstance)),
+                .hwnd = @ptrCast(@alignCast(window_info.hwnd)),
             },
         ),
 
@@ -318,8 +318,8 @@ fn createSurface(
                 instance,
                 vk.VkXlibSurfaceCreateInfoKHR{
                     .sType = vk.VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
-                    .dpy = @ptrCast(xlib.display),
-                    .window = xlib.window,
+                    .dpy = @ptrCast(@alignCast(xlib.display)),
+                    .window = @intCast(xlib.window),
                 },
             ),
 
@@ -329,7 +329,7 @@ fn createSurface(
                 vk.VkXcbSurfaceCreateInfoKHR{
                     .sType = vk.VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
                     .connection = @ptrCast(xcb.connection),
-                    .window = xcb.window,
+                    .window = @intCast(xcb.window),
                 },
             ),
 
@@ -338,8 +338,8 @@ fn createSurface(
                 instance,
                 vk.VkWaylandSurfaceCreateInfoKHR{
                     .sType = vk.VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
-                    .display = @ptrCast(wayland.display),
-                    .surface = @ptrCast(wayland.surface),
+                    .display = @ptrCast(@alignCast(wayland.display)),
+                    .surface = @ptrCast(@alignCast(wayland.surface)),
                 },
             ),
         },
@@ -364,6 +364,8 @@ fn createSurfaceGeneric(
     const create_surface = @as(F, @ptrCast(
         instance.get_proc_addr(instance.handle, name),
     )) orelse return null;
+
+    std.debug.print("ptr: {*}\n", .{create_surface});
 
     const result = create_surface(instance.handle, &create_info, null, &surface);
     return if (utils.success(result)) surface else null;

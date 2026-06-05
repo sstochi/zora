@@ -1,5 +1,6 @@
 const std = @import("std");
 const vk = @import("vulkan");
+const builtin = @import("builtin");
 
 pub const Format = enum(c_int) {
     unknown = vk.VK_FORMAT_UNDEFINED,
@@ -330,6 +331,62 @@ pub const PresentMode = enum(c_int) {
     fifo_khr = vk.VK_PRESENT_MODE_FIFO_KHR,
     filo_relaxed_khr = vk.VK_PRESENT_MODE_FIFO_RELAXED_KHR,
     _,
+};
+
+pub const VulkanLoader = switch (builtin.os.tag) {
+    .windows => struct {
+        const library_name: [*:0]const u8 = "vulkan-1.dll";
+
+        const BOOL = c_int;
+        const HMODULE = ?*anyopaque;
+        const FARPROC = ?*const fn () callconv(.c) c_int;
+
+        extern fn LoadLibraryA(lpLibFileName: [*:0]const u8) callconv(.c) HMODULE;
+        extern fn GetProcAddress(hModule: HMODULE, lpProcName: [*:0]const u8) callconv(.c) FARPROC;
+        extern fn FreeLibrary(hLibModule: HMODULE) callconv(.c) BOOL;
+
+        hmodule: HMODULE,
+
+        pub fn open() ?VulkanLoader {
+            const hmodule = LoadLibraryA(library_name);
+            if (hmodule == null) return null;
+            return .{ .hmodule = hmodule };
+        }
+
+        pub fn close(self: *VulkanLoader) void {
+            _ = FreeLibrary(self.hmodule);
+        }
+
+        pub fn lookup(self: *VulkanLoader, comptime T: type, name: [:0]const u8) ?T {
+            return @ptrCast(GetProcAddress(self.hmodule, name.ptr));
+        }
+    },
+
+    else => struct {
+        const library_name = switch (builtin.os.tag) {
+            .linux, .freebsd => "libvulkan.so",
+            .macos => "libvulkan.dylib",
+            else => @compileError("unknown os"),
+        };
+
+        handle: std.DynLib,
+
+        pub fn open() ?VulkanLoader {
+            return .{
+                .handle = std.DynLib.open(
+                    library_name,
+                ) catch return null,
+            };
+        }
+
+        pub fn close(self: *VulkanLoader) void {
+            self.handle.close();
+        }
+
+        pub fn lookup(self: *VulkanLoader, comptime T: type, name: [:0]const u8) ?T {
+            return @ptrCast(self.handle.lookup(T, name));
+        }
+    },
 };
 
 pub inline fn loadVtable(

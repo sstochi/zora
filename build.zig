@@ -19,6 +19,8 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path(b.fmt("headers/{s}.h", .{@tagName(backend)})),
     });
 
+    if (target.result.os.tag == .windows) translate_headers.defineCMacro("_WIN32", null);
+
     const zora = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
@@ -44,7 +46,26 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    example.root_module.dwarf_format = .@"32";
+
     example.root_module.linkSystemLibrary("sdl3", .{ .needed = true });
+
+    if (target.result.os.tag == .windows) {
+        const win_libs = [_][]const u8{
+            "winmm",
+            "ole32",
+            "oleaut32",
+            "setupapi",
+            "cfgmgr32",
+            "gdi32",
+            "imm32",
+            "version",
+        };
+
+        for (win_libs) |lib| {
+            example.root_module.linkSystemLibrary(lib, .{ .needed = true });
+        }
+    }
 
     b.installArtifact(example);
 
