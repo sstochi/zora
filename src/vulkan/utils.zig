@@ -1,6 +1,7 @@
 const std = @import("std");
 const vk = @import("vulkan");
 const builtin = @import("builtin");
+const zora = @import("../root.zig");
 
 pub const Format = enum(c_int) {
     unknown = vk.VK_FORMAT_UNDEFINED,
@@ -411,6 +412,13 @@ pub inline fn loadVtable(
     return table;
 }
 
-pub inline fn success(result: vk.VkResult) bool {
-    return result == vk.VK_SUCCESS or result == vk.VK_INCOMPLETE;
+pub inline fn except(result: vk.VkResult, default_error: anytype) (@TypeOf(default_error) || zora.GenericError)!void {
+    return switch (result) {
+        vk.VK_ERROR_OUT_OF_HOST_MEMORY,
+        vk.VK_ERROR_OUT_OF_DEVICE_MEMORY,
+        => error.AllocationFailed,
+
+        vk.VK_SUCCESS, vk.VK_INCOMPLETE => {},
+        else => default_error,
+    };
 }

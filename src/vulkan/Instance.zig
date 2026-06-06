@@ -4,9 +4,11 @@ const vk = @import("vulkan");
 const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
+const Options = zora.Instance.Options;
+const Error = zora.Instance.Error;
+
 const validation_layers: []const [*:0]const u8 = switch (zora.build_debug) {
-    // true => &.{"VK_LAYER_KHRONOS_validation"},
-    true => &.{},
+    true => &.{"VK_LAYER_KHRONOS_validation"},
     false => &.{},
 };
 
@@ -49,10 +51,12 @@ const VulkanLoader = switch (builtin.os.tag) {
 
         hmodule: HMODULE,
 
-        pub fn open() ?VulkanLoader {
-            const hmodule = LoadLibraryA(library_name.ptr);
-            if (hmodule == null) return null;
-            return .{ .hmodule = hmodule };
+        pub fn open() Error!VulkanLoader {
+            return .{
+                .hmodule = LoadLibraryA(
+                    library_name.ptr,
+                ) orelse return error.LoaderFailed,
+            };
         }
 
         pub fn close(self: *VulkanLoader) void {
@@ -67,11 +71,11 @@ const VulkanLoader = switch (builtin.os.tag) {
     else => struct {
         handle: std.DynLib,
 
-        pub fn open() ?VulkanLoader {
+        pub fn open() Error!VulkanLoader {
             return .{
                 .handle = std.DynLib.open(
                     library_name,
-                ) catch return null,
+                ) catch return error.LoaderFailed,
             };
         }
 
@@ -115,7 +119,7 @@ handle: vk.VkInstance,
 get_proc_addr: *const @TypeOf(vk.vkGetInstanceProcAddr),
 loader: VulkanLoader,
 
-pub fn create() zora.Instance.CreateInstanceError!Self {
+pub fn create(_: Options) Error!Self {
     const max_properties = 128;
 
     const version = vk.VK_MAKE_VERSION(
@@ -133,36 +137,34 @@ pub fn create() zora.Instance.CreateInstanceError!Self {
         .apiVersion = vk.VK_API_VERSION_1_0,
     };
 
-    var result: vk.VkResult = undefined;
     var query_buffer: [max_properties]vk.VkExtensionProperties = undefined;
     var query_count: u32 = max_properties;
 
     // load vulkan lib
-    var loader = VulkanLoader.open() orelse {
-        return error.UnableToCreateInstance;
-    };
+    var loader = try VulkanLoader.open();
     errdefer loader.close();
 
-    const get_instance_proc_addr = loader.lookup(
+    const get_proc_addr = loader.lookup(
         *const @TypeOf(vk.vkGetInstanceProcAddr),
         "vkGetInstanceProcAddr",
-    ) orelse return error.UnableToCreateInstance;
+    ) orelse return error.LoaderFailed;
 
     const enum_extensions: *const @TypeOf(vk.vkEnumerateInstanceExtensionProperties) = @ptrCast(
-        get_instance_proc_addr(null, "vkEnumerateInstanceExtensionProperties") orelse
-            return error.UnableToCreateInstance,
+        get_proc_addr(null, "vkEnumerateInstanceExtensionProperties") orelse
+            return error.LoaderFailed,
     );
 
     const createInstance: *const @TypeOf(vk.vkCreateInstance) = @ptrCast(
-        get_instance_proc_addr(null, "vkCreateInstance") orelse
-            return error.UnableToCreateInstance,
+        get_proc_addr(null, "vkCreateInstance") orelse
+            return error.LoaderFailed,
     );
 
     // query all extensions
-    result = enum_extensions(null, &query_count, &query_buffer);
-    if (!utils.success(result)) {
-        return error.UnableToCreateInstance;
-    }
+    try utils.except(enum_extensions(
+        null,
+        &query_count,
+        &query_buffer,
+    ), error.InstanceCreationFailed);
 
     // create initial extension list
     var ext_buffer: [max_optional_extensions + extensions.len][*:0]const u8 = undefined;
@@ -201,20 +203,29 @@ pub fn create() zora.Instance.CreateInstanceError!Self {
 
     // create vulkan instance
     var instance: vk.VkInstance = null;
-    result = createInstance(&create_info, null, &instance);
-    if (!utils.success(result)) return error.UnableToCreateInstance;
+    try utils.except(
+        createInstance(&create_info, null, &instance),
+        error.InstanceCreationFailed,
+    );
+
+    // load destroy and setup defer
+    const destroy_instance: *const @TypeOf(vk.vkDestroyInstance) = @ptrCast(
+        get_proc_addr(instance, "vkDestroyInstance") orelse
+            return error.LoaderFailed,
+    );
+    errdefer destroy_instance(instance, null);
 
     return .{
         // load virtual functions
         .vtable = utils.loadVtable(
             Vtable,
-            get_instance_proc_addr,
+            get_proc_addr,
             instance,
-        ) orelse return error.UnableToCreateInstance,
+        ) orelse return error.LoaderFailed,
 
         .handle = instance,
         .loader = loader,
-        .get_proc_addr = get_instance_proc_addr,
+        .get_proc_addr = get_proc_addr,
     };
 }
 
@@ -222,3 +233,7 @@ pub fn destroy(self: *Self) void {
     self.vtable.destroyInstance(self.handle, null);
     self.loader.close();
 }
+
+// fn createAllocator(allocator: std.mem.Allocator) ?vk.VkAllocationCallbacks {
+//     const userdata = allocator.create(std.mem.Allocator);
+// }

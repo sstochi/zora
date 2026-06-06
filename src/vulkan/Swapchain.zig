@@ -6,20 +6,21 @@ const zora = @import("../root.zig");
 const Instance = @import("Instance.zig");
 const Adapter = @import("Adapter.zig");
 
-chain_info: zora.Swapchain.Info,
+chain_info: zora.Swapchain.Options,
 adapter: *const Adapter,
 handle: vk.VkSwapchainKHR,
 acquire_image_sem: vk.VkSemaphore,
 present_sem: vk.VkSemaphore,
 
+const Error = zora.Swapchain.Error;
+const Options = zora.Swapchain.Options;
 const Self = @This();
 
 pub fn create(
     adapter: *const Adapter,
     handle: vk.VkSwapchainKHR,
-    chain_info: zora.Swapchain.Info,
-) ?Self {
-    var result: vk.VkResult = undefined;
+    options: Options,
+) Error!Self {
     var acquire_image_sem: vk.VkSemaphore = undefined;
     var present_sem: vk.VkSemaphore = undefined;
 
@@ -27,24 +28,22 @@ pub fn create(
         .sType = vk.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
     };
 
-    result = adapter.vtable.createSemaphore(
+    try utils.except(adapter.vtable.createSemaphore(
         adapter.handle,
         &create_info,
         null,
         &acquire_image_sem,
-    );
-    if (!utils.success(result)) return null;
+    ), error.SwapchainCreationFailed);
 
-    result = adapter.vtable.createSemaphore(
+    try utils.except(adapter.vtable.createSemaphore(
         adapter.handle,
         &create_info,
         null,
         &present_sem,
-    );
-    if (!utils.success(result)) return null;
+    ), error.SwapchainCreationFailed);
 
     return .{
-        .chain_info = chain_info,
+        .chain_info = options,
         .adapter = adapter,
         .handle = handle,
         .acquire_image_sem = acquire_image_sem,
@@ -63,16 +62,14 @@ pub fn destroy(self: *Self) void {
 pub fn present(self: *Self) void {
     var idx: u32 = undefined;
 
-    if (!utils.success(self.adapter.vtable.acquireNextImageKHR(
+    utils.except(self.adapter.vtable.acquireNextImageKHR(
         self.adapter.handle,
         self.handle,
         std.math.maxInt(u64),
         self.acquire_image_sem,
         null,
         &idx,
-    ))) {
-        @panic("balls");
-    }
+    ), error.Failed) catch @panic("balls");
 
     var handles: [1]vk.VkSwapchainKHR = .{self.handle};
     var semaphores: [1]vk.VkSemaphore = .{self.acquire_image_sem};
@@ -89,6 +86,6 @@ pub fn present(self: *Self) void {
     _ = self.adapter.vtable.queuePresentKHR(self.adapter.surface_queue, &create_info);
 }
 
-pub fn info(self: *const Self) *const zora.Swapchain.Info {
+pub fn info(self: *const Self) *const zora.Swapchain.Options {
     return &self.chain_info;
 }

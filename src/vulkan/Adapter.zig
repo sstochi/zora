@@ -6,6 +6,12 @@ const zora = @import("../root.zig");
 const Instance = @import("Instance.zig");
 const Swapchain = @import("Swapchain.zig");
 
+const Error = zora.Adapter.Error;
+const SwapchainError = zora.Swapchain.Error;
+const Options = zora.Adapter.Options;
+const SwapchainOptions = zora.Swapchain.Options;
+const Self = @This();
+
 const extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 };
@@ -88,17 +94,18 @@ const PhysicalDevice = struct {
 
 const Vtable = struct {
     getDeviceQueue: *const @TypeOf(vk.vkGetDeviceQueue),
+
+    createShaderModule: *const @TypeOf(vk.vkCreateShaderModule),
     createSemaphore: *const @TypeOf(vk.vkCreateSemaphore),
     createSwapchainKHR: *const @TypeOf(vk.vkCreateSwapchainKHR),
 
+    destroyShaderModule: *const @TypeOf(vk.vkDestroyShaderModule),
     destroySemaphore: *const @TypeOf(vk.vkDestroySemaphore),
     destroySwapchainKHR: *const @TypeOf(vk.vkDestroySwapchainKHR),
 
     acquireNextImageKHR: *const @TypeOf(vk.vkAcquireNextImageKHR),
     queuePresentKHR: *const @TypeOf(vk.vkQueuePresentKHR),
 };
-
-const Self = @This();
 
 vtable: Vtable,
 phy_device: PhysicalDevice,
@@ -110,16 +117,15 @@ surface_queue: vk.VkQueue,
 
 pub fn open(
     instance_outer: *zora.Instance,
-    window_info: zora.WindowInfo,
-    power_mode: zora.PowerMode,
-) zora.Adapter.CreateError!Self {
+    options: Options,
+) Error!Self {
     const priority: f32 = 1.0;
     const instance = &instance_outer.inner;
 
-    const surface = try createSurface(&instance_outer.inner, window_info);
+    const surface = try createSurface(&instance_outer.inner, options.window_info);
     errdefer instance.vtable.destroySurfaceKHR(instance.handle, surface, null);
 
-    const phy_device = try findPhyDevice(instance, surface, power_mode);
+    const phy_device = try findPhyDevice(instance, surface, options.power_mode);
     const info_count = 1 + @as(u32, @intFromBool(
         phy_device.surface_queue_idx != phy_device.graphics_queue_idx,
     ));
@@ -152,13 +158,19 @@ pub fn open(
     // create vulkan device
     var device: vk.VkDevice = null;
     const result = instance.vtable.createDevice(phy_device.handle, &create_info, null, &device);
-    if (!utils.success(result)) return error.NoViableAdapter;
+    try utils.except(result, error.AdapterAcquisitionFailed);
 
     const vtable = utils.loadVtable(
         Vtable,
         instance.vtable.getDeviceProcAddr,
         device,
-    ) orelse return error.NoViableAdapter;
+    ) orelse return error.LoaderFailed;
+
+    const destroy_device: *const @TypeOf(vk.vkDestroyDevice) = @ptrCast(
+        instance.get_proc_addr(instance.handle, "vkDestroyDevice") orelse
+            return error.LoaderFailed,
+    );
+    errdefer destroy_device(device, null);
 
     // retrieve graphics and surface queues for later use
     var graphics_queue: vk.VkQueue = null;
@@ -188,8 +200,8 @@ pub fn close(self: *Self) void {
 
 pub inline fn createSwapchain(
     self: *Self,
-    options: zora.Adapter.CreateSwapchainOptions,
-) zora.Adapter.SwapchainError!Swapchain {
+    options: SwapchainOptions,
+) SwapchainError!Swapchain {
     const max_formats: u32 = 128;
     const max_modes: u32 = 8;
 
@@ -199,35 +211,25 @@ pub inline fn createSwapchain(
     var format_count = max_formats;
     var mode_count = max_modes;
 
-    if (!utils.success(self.instance.vtable.getPhysicalDeviceSurfaceCapabilitiesKHR(
+    try utils.except(self.instance.vtable.getPhysicalDeviceSurfaceCapabilitiesKHR(
         self.phy_device.handle,
         self.surface,
         &capabilities,
-    ))) {
-        return error.UnableToCreateSwapchain;
-    }
+    ), error.SwapchainCreationFailed);
 
-    if (capabilities.maxImageCount == 0) {
-        capabilities.maxImageCount = std.math.maxInt(u32);
-    }
-
-    if (!utils.success(self.instance.vtable.getPhysicalDeviceSurfacePresentModesKHR(
+    try utils.except(self.instance.vtable.getPhysicalDeviceSurfacePresentModesKHR(
         self.phy_device.handle,
         self.surface,
         &mode_count,
         &mode_buffer,
-    ))) {
-        return error.UnableToCreateSwapchain;
-    }
+    ), error.SwapchainCreationFailed);
 
-    if (!utils.success(self.instance.vtable.getPhysicalDeviceSurfaceFormatsKHR(
+    try utils.except(self.instance.vtable.getPhysicalDeviceSurfaceFormatsKHR(
         self.phy_device.handle,
         self.surface,
         &format_count,
         &format_buffer,
-    ))) {
-        return error.UnableToCreateSwapchain;
-    }
+    ), error.SwapchainCreationFailed);
 
     const target_mode: vk.VkPresentModeKHR = switch (options.vsync_mode) {
         .auto, .enabled => vk.VK_PRESENT_MODE_FIFO_KHR,
@@ -253,6 +255,10 @@ pub inline fn createSwapchain(
         self.phy_device.graphics_queue_idx,
         self.phy_device.surface_queue_idx,
     };
+
+    if (capabilities.maxImageCount == 0) {
+        capabilities.maxImageCount = std.math.maxInt(u32);
+    }
 
     const create_info = vk.VkSwapchainCreateInfoKHR{
         .sType = vk.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -281,11 +287,11 @@ pub inline fn createSwapchain(
     // create swapchain khr
     var swapchain: vk.VkSwapchainKHR = null;
     const result = self.vtable.createSwapchainKHR(self.handle, &create_info, null, &swapchain);
-    if (!utils.success(result)) return error.UnableToCreateSwapchain;
+    try utils.except(result, error.SwapchainCreationFailed);
     errdefer self.vtable.destroySwapchainKHR(self.handle, swapchain, null);
 
     // create actual swapchain object
-    return Swapchain.create(
+    return try Swapchain.create(
         self,
         swapchain,
 
@@ -298,7 +304,7 @@ pub inline fn createSwapchain(
                 else => .disabled,
             },
         },
-    ) orelse return error.UnableToCreateSwapchain;
+    );
 }
 
 pub fn info(self: *const Self) *const zora.Adapter.Info {
@@ -308,8 +314,8 @@ pub fn info(self: *const Self) *const zora.Adapter.Info {
 fn createSurface(
     instance: *const Instance,
     window_info: zora.WindowInfo,
-) zora.Adapter.CreateError!vk.VkSurfaceKHR {
-    return switch (@TypeOf(window_info)) {
+) Error!vk.VkSurfaceKHR {
+    return try switch (@TypeOf(window_info)) {
         zora.WindowInfoWin32 => createSurfaceGeneric(
             "vkCreateWin32SurfaceKHR",
             instance,
@@ -353,14 +359,14 @@ fn createSurface(
         },
 
         else => @compileError("unknown window info"),
-    } orelse return error.UnableToCreateSurface;
+    };
 }
 
 fn createSurfaceGeneric(
     comptime name: [*:0]const u8,
     instance: *const Instance,
     create_info: anytype,
-) ?vk.VkSurfaceKHR {
+) Error!vk.VkSurfaceKHR {
     const F = ?*const fn (
         vk.VkInstance,
         ?*const @TypeOf(create_info),
@@ -371,32 +377,39 @@ fn createSurfaceGeneric(
     var surface: vk.VkSurfaceKHR = null;
     const create_surface = @as(F, @ptrCast(
         instance.get_proc_addr(instance.handle, name),
-    )) orelse return null;
+    )) orelse return error.LoaderFailed;
 
-    const result = create_surface(instance.handle, &create_info, null, &surface);
-    return if (utils.success(result)) surface else null;
+    try utils.except(
+        create_surface(
+            instance.handle,
+            &create_info,
+            null,
+            &surface,
+        ),
+        error.SurfaceCreationFailed,
+    );
+
+    return surface;
 }
 
 fn findPhyDevice(
     instance: *const Instance,
     surface: vk.VkSurfaceKHR,
     power_mode: zora.PowerMode,
-) zora.Adapter.CreateError!PhysicalDevice {
+) zora.Adapter.Error!PhysicalDevice {
     const max_extensions: u32 = 128;
     const max_devices: u32 = 16;
 
-    var result: vk.VkResult = undefined;
     var ext_buffer: [max_extensions]vk.VkExtensionProperties = undefined;
     var device_buffer: [max_devices]vk.VkPhysicalDevice = undefined;
     var device_count: u32 = max_devices;
 
     // enumerate all physical devices
-    result = instance.vtable.enumeratePhysicalDevices(
+    try utils.except(instance.vtable.enumeratePhysicalDevices(
         instance.handle,
         &device_count,
         &device_buffer,
-    );
-    if (!utils.success(result)) return error.NoViableAdapter;
+    ), error.AdapterAcquisitionFailed);
 
     // prepare buffers for queues
     var queue_buffer: [max_devices]vk.VkQueueFamilyProperties = undefined;
@@ -417,16 +430,12 @@ fn findPhyDevice(
         );
 
         // ... and its extensions
-        result = instance.vtable.enumerateDeviceExtensionProperties(
+        utils.except(instance.vtable.enumerateDeviceExtensionProperties(
             device,
             null,
             &ext_count,
             &ext_buffer,
-        );
-
-        if (!utils.success(result)) {
-            continue;
-        }
+        ), error.Failed) catch continue;
 
         // we search for required extensions
         search: for (extensions) |ext| {
@@ -443,14 +452,12 @@ fn findPhyDevice(
         var graphics_queue_idx: ?u32 = null;
         var surface_queue_idx: ?u32 = null;
         for (0..queue_count) |j| {
-            if (instance.vtable.getPhysicalDeviceSurfaceSupportKHR(
+            utils.except(instance.vtable.getPhysicalDeviceSurfaceSupportKHR(
                 device,
                 @intCast(j),
                 surface,
                 &supports_surface,
-            ) != vk.VK_SUCCESS) {
-                continue;
-            }
+            ), error.Failed) catch continue;
 
             // check if queue supprots graphics
             if ((queue_buffer[j].queueFlags & vk.VK_QUEUE_GRAPHICS_BIT) != 0) {
@@ -486,7 +493,7 @@ fn findPhyDevice(
         });
     }
 
-    return if (info_count != 0) infos[0] else error.NoViableAdapter;
+    return if (info_count != 0) infos[0] else error.AdapterAcquisitionFailed;
 }
 
 fn formatCompareLessThan(_: void, a: vk.VkSurfaceFormatKHR, b: vk.VkSurfaceFormatKHR) bool {

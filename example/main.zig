@@ -11,23 +11,34 @@ pub fn main(_: std.process.Init) !void {
     const driver_name = std.mem.span(sdl.SDL_GetCurrentVideoDriver());
     const props = sdl.SDL_GetWindowProperties(window);
 
-    var instance = try zora.Instance.create();
+    var instance = try zora.Instance.create(.{});
     defer instance.destroy();
 
-    var adapter = if (builtin.os.tag != .windows) outer: {
-        break :outer if (std.mem.eql(u8, driver_name, "x11")) blk: {
+    var adapter = try if (builtin.os.tag != .windows) outer: {
+        const window_info: zora.WindowInfo = if (std.mem.eql(u8, driver_name, "x11")) blk: {
             const display = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_X11_DISPLAY_POINTER, null);
-            const window_handle = sdl.SDL_GetNumberProperty(props, sdl.SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
-            break :blk try zora.Adapter.open(&instance, .{ .xlib = .{ .display = display, .window = @intCast(window_handle) } }, .discrete);
+            const handle = sdl.SDL_GetNumberProperty(props, sdl.SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
+            break :blk .{ .xlib = .{
+                .display = display,
+                .window = @intCast(handle),
+            } };
         } else if (std.mem.eql(u8, driver_name, "wayland")) blk: {
             const display = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, null);
             const surface = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, null);
-            break :blk try zora.Adapter.open(&instance, .{ .wayland = .{ .display = display, .surface = surface } }, .discrete);
+            break :blk .{ .wayland = .{
+                .display = display,
+                .surface = surface,
+            } };
         } else return error.InvalidBackend;
+
+        break :outer zora.Adapter.open(&instance, .{
+            .power_mode = .discrete,
+            .window_info = window_info,
+        });
     } else outer: {
         const hinstance = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, null);
         const hwnd = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null);
-        break :outer try zora.Adapter.open(&instance, .{ .hinstance = hinstance, .hwnd = hwnd }, .discrete);
+        break :outer zora.Adapter.open(&instance, .{ .hinstance = hinstance, .hwnd = hwnd }, .discrete);
     };
     defer adapter.close();
 

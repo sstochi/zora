@@ -16,6 +16,11 @@ const backend = switch (build_options.backend) {
 pub const VsyncMode = enum { auto, disabled, enabled, adaptive };
 pub const PowerMode = enum { integrated, discrete };
 
+pub const GenericError = error{
+    AllocationFailed,
+    LoaderFailed,
+};
+
 pub const WindowInfoWin32 = struct {
     hinstance: ?*anyopaque,
     hwnd: ?*anyopaque,
@@ -35,13 +40,22 @@ pub const WindowInfo = switch (builtin.target.os.tag) {
 
 pub const Instance = struct {
     pub const InnerType = backend.Instance;
-    pub const CreateInstanceError = error{UnableToCreateInstance};
+
+    pub const Error = error{
+        InstanceCreationFailed,
+    } || GenericError;
+
+    pub const Options = struct {
+        /// If supported by backend, following allocator
+        /// will be used for its internal allocations.
+        allocator: ?std.mem.Allocator = null,
+    };
 
     inner: InnerType,
 
     /// This function should only be called on main thread.
-    pub inline fn create() !Instance {
-        return .{ .inner = try InnerType.create() };
+    pub inline fn create(options: Options) !Instance {
+        return .{ .inner = try InnerType.create(options) };
     }
 
     /// This function should only be called on main thread.
@@ -54,14 +68,15 @@ pub const Instance = struct {
 pub const Adapter = struct {
     pub const Impl = backend.Adapter;
 
-    pub const CreateSwapchainOptions = Swapchain.Info;
-    pub const CreateTextureOptions = Texture.Info;
-    pub const CreateSamplerOptions = Sampler.Info;
+    pub const Error = error{
+        AdapterAcquisitionFailed,
+        SurfaceCreationFailed,
+    } || GenericError;
 
-    pub const CreateError = error{ UnableToCreateSurface, NoViableAdapter };
-    pub const SwapchainError = error{UnableToCreateSwapchain};
-    pub const TextureCreateError = error{};
-    pub const SamplerCreateError = error{};
+    pub const Options = struct {
+        window_info: WindowInfo,
+        power_mode: PowerMode,
+    };
 
     pub const Info = struct {
         vram_mb: ?u32,
@@ -81,10 +96,9 @@ pub const Adapter = struct {
     /// This function should only be called on main thread.
     pub inline fn open(
         instance: *Instance,
-        window_info: WindowInfo,
-        power_mode: PowerMode,
-    ) CreateError!Adapter {
-        return .{ .inner = try Impl.open(instance, window_info, power_mode) };
+        options: Options,
+    ) Error!Adapter {
+        return .{ .inner = try Impl.open(instance, options) };
     }
 
     /// This function should only be called on main thread.
@@ -95,24 +109,31 @@ pub const Adapter = struct {
     /// This function should only be called on main thread.
     pub inline fn createSwapchain(
         self: *Adapter,
-        options: CreateSwapchainOptions,
-    ) SwapchainError!Swapchain {
+        options: Swapchain.Options,
+    ) Swapchain.Error!Swapchain {
         return .{ .inner = try self.inner.createSwapchain(options) };
+    }
+
+    pub inline fn createShader(
+        self: *Adapter,
+        options: Shader.Options,
+    ) Shader.Error!Shader {
+        return .{ .inner = try self.inner.createShader(options) };
     }
 
     /// This function should only be called on main thread.
     pub inline fn createSampler(
         self: *Adapter,
-        options: CreateSamplerOptions,
-    ) SamplerCreateError!Sampler {
+        options: Sampler.Options,
+    ) Sampler.Error!Sampler {
         return .{ .inner = try self.inner.createSampler(options) };
     }
 
     /// This function should only be called on main thread.
     pub inline fn createTexture(
         self: *Adapter,
-        options: CreateTextureOptions,
-    ) TextureCreateError!Texture {
+        options: Texture.Options,
+    ) Texture.Error!Texture {
         return .{ .inner = try self.inner.createTexture(options) };
     }
 
@@ -125,6 +146,11 @@ pub const Adapter = struct {
 /// Must never outlive parent `Adapter`.
 pub const Swapchain = struct {
     pub const InnerType = backend.Swapchain;
+    pub const Options = Info;
+
+    pub const Error = error{
+        SwapchainCreationFailed,
+    } || GenericError;
 
     pub const Info = struct {
         vsync_mode: VsyncMode = .enabled,
@@ -150,7 +176,46 @@ pub const Swapchain = struct {
 };
 
 /// Must never outlive parent `Adapter`.
+pub const Shader = struct {
+    pub const InnerType = backend.Shader;
+    pub const Error = error{} || GenericError;
+
+    pub const Stage = enum {
+        vertex,
+        fragment,
+    };
+
+    pub const Entrypoint = struct {
+        stage: Stage,
+        name: [:0]const u8,
+    };
+
+    pub const Options = struct {
+        spirv: []const u8,
+        entrypoints: []const Entrypoint,
+
+        /// Optional to include, improves compatability with
+        /// OpenGL pre-4.6
+        glsl: ?[]const u8 = null,
+    };
+
+    pub const Info = struct {
+        type: Stage,
+    };
+
+    inner: InnerType,
+
+    /// This function is safe to call on any thread.
+    pub inline fn info(self: *const Shader) *const Info {
+        return self.inner.info();
+    }
+};
+
+/// Must never outlive parent `Adapter`.
 pub const Texture = struct {
+    pub const Error = error{} || GenericError;
+    pub const Options = Info;
+
     pub const Usage = packed struct {
         read: bool,
         write: bool,
@@ -175,6 +240,9 @@ pub const Texture = struct {
 
 /// Must never outlive parent `Adapter`.
 pub const Sampler = struct {
+    pub const Error = error{} || GenericError;
+    pub const Options = Info;
+
     pub const Info = struct {
         pub const Filter = enum { linear, nearest };
         pub const AddressMode = enum { clamp, repeat };
