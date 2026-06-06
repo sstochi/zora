@@ -6,15 +6,15 @@ const zora = @import("../root.zig");
 const Instance = @import("Instance.zig");
 const Adapter = @import("Adapter.zig");
 
+const Self = @This();
+const Error = zora.Swapchain.Error;
+const Options = zora.Swapchain.Options;
+
 chain_info: zora.Swapchain.Options,
 adapter: *const Adapter,
 handle: vk.VkSwapchainKHR,
 acquire_image_sem: vk.VkSemaphore,
 present_sem: vk.VkSemaphore,
-
-const Error = zora.Swapchain.Error;
-const Options = zora.Swapchain.Options;
-const Self = @This();
 
 pub fn create(
     adapter: *const Adapter,

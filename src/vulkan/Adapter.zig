@@ -3,14 +3,16 @@ const vk = @import("vulkan");
 const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
+const Self = @This();
 const Instance = @import("Instance.zig");
 const Swapchain = @import("Swapchain.zig");
 
 const Error = zora.Adapter.Error;
 const SwapchainError = zora.Swapchain.Error;
+const GenericError = zora.GenericError;
+
 const Options = zora.Adapter.Options;
 const SwapchainOptions = zora.Swapchain.Options;
-const Self = @This();
 
 const extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -34,15 +36,8 @@ const PhysicalDevice = struct {
         var mem_prop: vk.VkPhysicalDeviceMemoryProperties = undefined;
 
         // query info about the device
-        instance.vtable.getPhysicalDeviceProperties(
-            adapter,
-            &prop,
-        );
-
-        instance.vtable.getPhysicalDeviceMemoryProperties(
-            adapter,
-            &mem_prop,
-        );
+        instance.vtable.getPhysicalDeviceProperties(adapter, &prop);
+        instance.vtable.getPhysicalDeviceMemoryProperties(adapter, &mem_prop);
 
         // calculate total vram
         var vram_bytes: u64 = 0;
@@ -166,9 +161,9 @@ pub fn open(
         device,
     ) orelse return error.LoaderFailed;
 
-    const destroy_device: *const @TypeOf(vk.vkDestroyDevice) = @ptrCast(
-        instance.get_proc_addr(instance.handle, "vkDestroyDevice") orelse
-            return error.LoaderFailed,
+    const destroy_device = try instance.getProcAddr(
+        *const @TypeOf(vk.vkDestroyDevice),
+        "vkDestroyDevice",
     );
     errdefer destroy_device(device, null);
 
@@ -294,7 +289,6 @@ pub inline fn createSwapchain(
     return try Swapchain.create(
         self,
         swapchain,
-
         .{
             .width = options.width,
             .height = options.height,
@@ -309,6 +303,11 @@ pub inline fn createSwapchain(
 
 pub fn info(self: *const Self) *const zora.Adapter.Info {
     return &self.phy_device.info;
+}
+
+pub fn getProcAddr(self: *const Self, comptime F: type, comptime name: [:0]const u8) GenericError!F {
+    return @ptrCast(self.instance.vtable.getDeviceProcAddr(self.handle, name.ptr) orelse
+        return error.LoaderFailed);
 }
 
 fn createSurface(
@@ -376,7 +375,7 @@ fn createSurfaceGeneric(
 
     var surface: vk.VkSurfaceKHR = null;
     const create_surface = @as(F, @ptrCast(
-        instance.get_proc_addr(instance.handle, name),
+        instance.proc_addr_fn_ptr(instance.handle, name),
     )) orelse return error.LoaderFailed;
 
     try utils.except(

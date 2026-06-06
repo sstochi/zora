@@ -4,8 +4,10 @@ const vk = @import("vulkan");
 const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
+const Self = @This();
 const Options = zora.Instance.Options;
 const Error = zora.Instance.Error;
+const GenericError = zora.GenericError;
 
 const validation_layers: []const [*:0]const u8 = switch (zora.build_debug) {
     true => &.{"VK_LAYER_KHRONOS_validation"},
@@ -112,11 +114,9 @@ const Vtable = struct {
     queuePresentKHR: *const @TypeOf(vk.vkQueuePresentKHR),
 };
 
-const Self = @This();
-
 vtable: Vtable,
 handle: vk.VkInstance,
-get_proc_addr: *const @TypeOf(vk.vkGetInstanceProcAddr),
+proc_addr_fn_ptr: *const @TypeOf(vk.vkGetInstanceProcAddr),
 loader: VulkanLoader,
 
 pub fn create(_: Options) Error!Self {
@@ -225,13 +225,18 @@ pub fn create(_: Options) Error!Self {
 
         .handle = instance,
         .loader = loader,
-        .get_proc_addr = get_proc_addr,
+        .proc_addr_fn_ptr = get_proc_addr,
     };
 }
 
 pub fn destroy(self: *Self) void {
     self.vtable.destroyInstance(self.handle, null);
     self.loader.close();
+}
+
+pub fn getProcAddr(self: *const Self, comptime F: type, comptime name: [:0]const u8) GenericError!F {
+    return @ptrCast(self.proc_addr_fn_ptr(self.handle, name.ptr) orelse
+        return error.LoaderFailed);
 }
 
 // fn createAllocator(allocator: std.mem.Allocator) ?vk.VkAllocationCallbacks {
