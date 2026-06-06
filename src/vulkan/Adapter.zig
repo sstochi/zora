@@ -27,6 +27,7 @@ const PhysicalDevice = struct {
         var prop: vk.VkPhysicalDeviceProperties = undefined;
         var mem_prop: vk.VkPhysicalDeviceMemoryProperties = undefined;
 
+        // query info about the device
         instance.vtable.getPhysicalDeviceProperties(
             adapter,
             &prop,
@@ -37,6 +38,7 @@ const PhysicalDevice = struct {
             &mem_prop,
         );
 
+        // calculate total vram
         var vram_bytes: u64 = 0;
         for (mem_prop.memoryHeaps[0..mem_prop.memoryHeapCount]) |heap| {
             if ((heap.flags & vk.VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0) {
@@ -107,17 +109,17 @@ graphics_queue: vk.VkQueue,
 surface_queue: vk.VkQueue,
 
 pub fn open(
-    instance: *zora.Instance,
+    instance_outer: *zora.Instance,
     window_info: zora.WindowInfo,
     power_mode: zora.PowerMode,
 ) zora.Adapter.CreateError!Self {
     const priority: f32 = 1.0;
-    const inner = &instance.inner;
+    const instance = &instance_outer.inner;
 
-    const surface = try createSurface(&instance.inner, window_info);
-    errdefer inner.vtable.destroySurfaceKHR(inner.handle, surface, null);
+    const surface = try createSurface(&instance_outer.inner, window_info);
+    errdefer instance.vtable.destroySurfaceKHR(instance.handle, surface, null);
 
-    const phy_device = try findPhyDevice(inner, surface, power_mode);
+    const phy_device = try findPhyDevice(instance, surface, power_mode);
     const info_count = 1 + @as(u32, @intFromBool(
         phy_device.surface_queue_idx != phy_device.graphics_queue_idx,
     ));
@@ -143,28 +145,22 @@ pub fn open(
         .pQueueCreateInfos = &infos,
         .queueCreateInfoCount = info_count,
         .pEnabledFeatures = &features,
-        .ppEnabledExtensionNames = extensions.ptr,
+        .ppEnabledExtensionNames = if (extensions.len == 0) null else extensions.ptr,
         .enabledExtensionCount = @intCast(extensions.len),
     };
 
+    // create vulkan device
     var device: vk.VkDevice = null;
-    const result = inner.vtable.createDevice(
-        phy_device.handle,
-        &create_info,
-        null,
-        &device,
-    );
-
-    if (!utils.success(result)) {
-        return error.NoViableAdapter;
-    }
+    const result = instance.vtable.createDevice(phy_device.handle, &create_info, null, &device);
+    if (!utils.success(result)) return error.NoViableAdapter;
 
     const vtable = utils.loadVtable(
         Vtable,
-        inner.vtable.getDeviceProcAddr,
+        instance.vtable.getDeviceProcAddr,
         device,
     ) orelse return error.NoViableAdapter;
 
+    // retrieve graphics and surface queues for later use
     var graphics_queue: vk.VkQueue = null;
     var surface_queue: vk.VkQueue = null;
     vtable.getDeviceQueue(device, phy_device.graphics_queue_idx, 0, &graphics_queue);
@@ -173,7 +169,7 @@ pub fn open(
     return .{
         .phy_device = phy_device,
         .vtable = vtable,
-        .instance = &instance.inner,
+        .instance = &instance_outer.inner,
         .surface = surface,
         .handle = device,
         .graphics_queue = graphics_queue,
@@ -273,6 +269,7 @@ pub inline fn createSwapchain(
         .imageArrayLayers = 1,
         .imageUsage = vk.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         .imageSharingMode = if (same_queue) vk.VK_SHARING_MODE_EXCLUSIVE else vk.VK_SHARING_MODE_CONCURRENT,
+
         .pQueueFamilyIndices = if (same_queue) null else &queue_indicies,
         .queueFamilyIndexCount = if (same_queue) 0 else @intCast(queue_indicies.len),
 
@@ -281,15 +278,26 @@ pub inline fn createSwapchain(
         .clipped = vk.VK_TRUE,
     };
 
-    var swapchain: vk.VkSwapchainKHR = undefined;
+    // create swapchain khr
+    var swapchain: vk.VkSwapchainKHR = null;
     const result = self.vtable.createSwapchainKHR(self.handle, &create_info, null, &swapchain);
     if (!utils.success(result)) return error.UnableToCreateSwapchain;
     errdefer self.vtable.destroySwapchainKHR(self.handle, swapchain, null);
 
+    // create actual swapchain object
     return Swapchain.create(
         self,
         swapchain,
-        options,
+
+        .{
+            .width = options.width,
+            .height = options.height,
+            .vsync_mode = switch (mode_buffer[0]) {
+                vk.VK_PRESENT_MODE_FIFO_KHR => .enabled,
+                vk.VK_PRESENT_MODE_FIFO_RELAXED_KHR => .adaptive,
+                else => .disabled,
+            },
+        },
     ) orelse return error.UnableToCreateSwapchain;
 }
 
@@ -365,8 +373,6 @@ fn createSurfaceGeneric(
         instance.get_proc_addr(instance.handle, name),
     )) orelse return null;
 
-    std.debug.print("ptr: {*}\n", .{create_surface});
-
     const result = create_surface(instance.handle, &create_info, null, &surface);
     return if (utils.success(result)) surface else null;
 }
@@ -390,10 +396,7 @@ fn findPhyDevice(
         &device_count,
         &device_buffer,
     );
-
-    if (!utils.success(result)) {
-        return error.NoViableAdapter;
-    }
+    if (!utils.success(result)) return error.NoViableAdapter;
 
     // prepare buffers for queues
     var queue_buffer: [max_devices]vk.VkQueueFamilyProperties = undefined;

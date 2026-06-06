@@ -31,8 +31,8 @@ pub fn main(_: std.process.Init) !void {
     };
     defer adapter.close();
 
-    // var swapchain = try adapter.createSwapchain(.{ .width = 640, .height = 360, .vsync_mode = .adaptive });
-    // defer swapchain.destroy();
+    var swapchain = try adapter.createSwapchain(.{ .width = 640, .height = 360, .vsync_mode = .adaptive });
+    defer swapchain.destroy();
 
     const info = adapter.info();
     std.debug.print("{any}\n", .{info});
@@ -46,6 +46,6 @@ pub fn main(_: std.process.Init) !void {
             }
         }
 
-        // swapchain.present();
+        swapchain.present();
     }
 }
