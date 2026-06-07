@@ -45,11 +45,7 @@ pub const Instance = struct {
         InstanceCreationFailed,
     } || GenericError;
 
-    pub const Options = struct {
-        /// If supported by backend, following allocator
-        /// will be used for its internal allocations.
-        allocator: ?std.mem.Allocator = null,
-    };
+    pub const Options = struct {};
 
     inner: InnerType,
 

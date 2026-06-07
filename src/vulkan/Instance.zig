@@ -238,7 +238,3 @@ pub fn getProcAddr(self: *const Self, comptime F: type, comptime name: [:0]const
     return @ptrCast(self.proc_addr_fn_ptr(self.handle, name.ptr) orelse
         return error.LoaderFailed);
 }
-
-// fn createAllocator(allocator: std.mem.Allocator) ?vk.VkAllocationCallbacks {
-//     const userdata = allocator.create(std.mem.Allocator);
-// }
