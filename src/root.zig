@@ -176,27 +176,35 @@ pub const Shader = struct {
     pub const InnerType = backend.Shader;
     pub const Error = error{} || GenericError;
 
-    pub const Stage = enum {
+    pub const StageType = enum {
         vertex,
         fragment,
     };
 
-    pub const Entrypoint = struct {
-        stage: Stage,
-        name: [:0]const u8,
+    pub const Bind = struct {
+        location: u32,
+        value: union(enum) {
+            sampler: Sampler,
+            texture: Texture,
+        },
+    };
+
+    pub const Stage = struct {
+        binds: []const Bind,
+        entrypoint: [:0]const u8,
+        type: StageType,
     };
 
     pub const Options = struct {
+        stages: []const Stage,
         spirv: []const u8,
-        entrypoints: []const Entrypoint,
-
         /// Optional to include, improves compatability with
         /// OpenGL pre-4.6
         glsl: ?[]const u8 = null,
     };
 
     pub const Info = struct {
-        type: Stage,
+        type: StageType,
     };
 
     inner: InnerType,

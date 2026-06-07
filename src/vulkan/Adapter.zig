@@ -6,13 +6,16 @@ const zora = @import("../root.zig");
 const Self = @This();
 const Instance = @import("Instance.zig");
 const Swapchain = @import("Swapchain.zig");
+const Shader = @import("Shader.zig");
 
 const Error = zora.Adapter.Error;
 const SwapchainError = zora.Swapchain.Error;
+const ShaderError = zora.Shader.Error;
 const GenericError = zora.GenericError;
 
 const Options = zora.Adapter.Options;
 const SwapchainOptions = zora.Swapchain.Options;
+const ShaderOptions = zora.Shader.Options;
 
 const extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -193,7 +196,7 @@ pub fn close(self: *Self) void {
     self.instance.vtable.destroyDevice(self.handle, null);
 }
 
-pub inline fn createSwapchain(
+pub fn createSwapchain(
     self: *Self,
     options: SwapchainOptions,
 ) SwapchainError!Swapchain {
@@ -300,6 +303,8 @@ pub inline fn createSwapchain(
         },
     );
 }
+
+pub fn createShader(_: *Self, _: ShaderOptions) ShaderError!Shader {}
 
 pub fn info(self: *const Self) *const zora.Adapter.Info {
     return &self.phy_device.info;
