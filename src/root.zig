@@ -110,6 +110,7 @@ pub const Adapter = struct {
         return .{ .inner = try self.inner.createSwapchain(options) };
     }
 
+    /// This function should only be called on main thread.
     pub inline fn createShader(
         self: *Adapter,
         options: Shader.Options,
