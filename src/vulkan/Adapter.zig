@@ -9,16 +9,9 @@ const Swapchain = @import("Swapchain.zig");
 const Shader = @import("Shader.zig");
 
 const Error = zora.Adapter.Error;
-const SwapchainError = zora.Swapchain.Error;
-const ShaderError = zora.Shader.Error;
 const GenericError = zora.GenericError;
-
 const Options = zora.Adapter.Options;
 const Info = zora.Adapter.Info;
-const SwapchainOptions = zora.Swapchain.Options;
-const ShaderOptions = zora.Shader.Options;
-
-const PowerMode = zora.PowerMode;
 
 const extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -26,7 +19,7 @@ const extensions: []const [*:0]const u8 = &.{
 
 const PhysicalDevice = struct {
     name: [256]u8,
-    info: zora.Adapter.Info,
+    info: Info,
     handle: vk.VkPhysicalDevice,
     graphics_queue_idx: u32,
     surface_queue_idx: u32,
@@ -136,7 +129,7 @@ const PhysicalDevice = struct {
         };
     }
 
-    pub fn score(self: *const PhysicalDevice, power_mode: PowerMode) u64 {
+    pub fn score(self: *const PhysicalDevice, power_mode: zora.PowerMode) u64 {
         var total = @as(u64, @intFromBool(self.info.power_mode == power_mode));
         total *= std.math.maxInt(u32);
         total += self.info.vram_mb.?;
@@ -255,11 +248,17 @@ pub fn close(self: *Self) void {
     self.instance.vtable.destroyDevice(self.handle, null);
 }
 
-pub inline fn createSwapchain(self: *Self, options: SwapchainOptions) SwapchainError!Swapchain {
+pub inline fn createSwapchain(
+    self: *Self,
+    options: zora.Swapchain.Options,
+) zora.Swapchain.Error!Swapchain {
     return try Swapchain.create(self, options);
 }
 
-pub inline fn createShader(self: *Self, options: ShaderOptions) ShaderError!Shader {
+pub inline fn createShader(
+    self: *Self,
+    options: zora.Shader.Options,
+) zora.Shader.Error!Shader {
     return try Shader.create(self, options);
 }
 

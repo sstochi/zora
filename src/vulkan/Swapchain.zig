@@ -21,18 +21,12 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     const max_formats: u32 = 128;
     const max_modes: u32 = 8;
 
-    var capabilities: vk.VkSurfaceCapabilitiesKHR = undefined;
     var format_buffer: [max_formats]vk.VkSurfaceFormatKHR = undefined;
     var mode_buffer: [max_modes]vk.VkPresentModeKHR = undefined;
     var format_count = max_formats;
     var mode_count = max_modes;
 
-    try utils.except(adapter.instance.vtable.getPhysicalDeviceSurfaceCapabilitiesKHR(
-        adapter.phy_device.handle,
-        adapter.surface,
-        &capabilities,
-    ), error.SwapchainCreationFailed);
-
+    // query surface formats...
     try utils.except(adapter.instance.vtable.getPhysicalDeviceSurfacePresentModesKHR(
         adapter.phy_device.handle,
         adapter.surface,
@@ -40,6 +34,7 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
         &mode_buffer,
     ), error.SwapchainCreationFailed);
 
+    // ... and present modes
     try utils.except(adapter.instance.vtable.getPhysicalDeviceSurfaceFormatsKHR(
         adapter.phy_device.handle,
         adapter.surface,
@@ -47,12 +42,14 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
         &format_buffer,
     ), error.SwapchainCreationFailed);
 
+    // decide on the best present mode
     const target_mode: vk.VkPresentModeKHR = switch (options.vsync_mode) {
         .auto, .enabled => vk.VK_PRESENT_MODE_FIFO_KHR,
         .adaptive => vk.VK_PRESENT_MODE_FIFO_RELAXED_KHR,
         .disabled => vk.VK_PRESENT_MODE_IMMEDIATE_KHR,
     };
 
+    // sort based on favourability
     std.mem.sort(vk.VkPresentModeKHR, mode_buffer[0..mode_count], target_mode, presentModeCompareLessThan);
     std.mem.sort(vk.VkSurfaceFormatKHR, format_buffer[0..format_count], {}, formatCompareLessThan);
 
@@ -66,37 +63,47 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
         std.log.debug("\t{?s}", .{std.enums.tagName(utils.PresentMode, @enumFromInt(mode_buffer[i]))});
     }
 
+    // query capabilities
+    var capabilities: vk.VkSurfaceCapabilitiesKHR = undefined;
+    try utils.except(adapter.instance.vtable.getPhysicalDeviceSurfaceCapabilitiesKHR(
+        adapter.phy_device.handle,
+        adapter.surface,
+        &capabilities,
+    ), error.SwapchainCreationFailed);
+
+    const max_image_count = switch (capabilities.maxImageCount) {
+        0 => std.math.maxInt(u32), // in vulkan, 0 means "unlimited"
+        else => capabilities.maxImageCount,
+    };
+
+    const same_queue = adapter.phy_device.graphics_queue_idx == adapter.phy_device.surface_queue_idx;
     const queue_indicies: [2]u32 = .{
         adapter.phy_device.graphics_queue_idx,
         adapter.phy_device.surface_queue_idx,
     };
 
-    if (capabilities.maxImageCount == 0) {
-        capabilities.maxImageCount = std.math.maxInt(u32);
-    }
-
-    const same_queue = adapter.phy_device.graphics_queue_idx == adapter.phy_device.surface_queue_idx;
     const create_info = vk.VkSwapchainCreateInfoKHR{
         .sType = vk.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .surface = adapter.surface,
+        .compositeAlpha = vk.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .clipped = vk.VK_TRUE,
 
-        .minImageCount = @min(capabilities.minImageCount + 1, capabilities.maxImageCount),
-        .imageFormat = format_buffer[0].format,
-        .imageColorSpace = format_buffer[0].colorSpace,
+        .pQueueFamilyIndices = if (same_queue) null else &queue_indicies,
+        .queueFamilyIndexCount = if (same_queue) 0 else @intCast(queue_indicies.len),
+
+        .minImageCount = @min(capabilities.minImageCount + 1, max_image_count),
         .imageExtent = vk.VkExtent2D{
             .width = @min(options.width, capabilities.maxImageExtent.width),
             .height = @min(options.height, capabilities.maxImageExtent.height),
         },
-        .imageArrayLayers = 1,
         .imageUsage = vk.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         .imageSharingMode = if (same_queue) vk.VK_SHARING_MODE_EXCLUSIVE else vk.VK_SHARING_MODE_CONCURRENT,
-        .pQueueFamilyIndices = if (same_queue) null else &queue_indicies,
-        .queueFamilyIndexCount = if (same_queue) 0 else @intCast(queue_indicies.len),
+        .imageFormat = format_buffer[0].format,
+        .imageColorSpace = format_buffer[0].colorSpace,
+        .imageArrayLayers = 1,
 
+        .surface = adapter.surface,
         .presentMode = mode_buffer[0],
         .preTransform = capabilities.currentTransform,
-        .compositeAlpha = vk.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .clipped = vk.VK_TRUE,
     };
 
     // create swapchain khr
@@ -153,6 +160,8 @@ pub fn destroy(self: *Self) void {
 }
 
 pub fn present(self: *Self) void {
+    // WIP: currently this code does nothing and is in fact incorrect
+    // it's simply here to submite changes to wayland :)
     var idx: u32 = undefined;
 
     utils.except(self.adapter.vtable.acquireNextImageKHR(
@@ -162,7 +171,7 @@ pub fn present(self: *Self) void {
         self.acquire_image_sem,
         null,
         &idx,
-    ), error.Failed) catch @panic("balls");
+    ), error.Failed) catch @panic(":(");
 
     var handles: [1]vk.VkSwapchainKHR = .{self.handle};
     var semaphores: [1]vk.VkSemaphore = .{self.acquire_image_sem};

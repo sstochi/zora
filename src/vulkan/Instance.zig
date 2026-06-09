@@ -5,9 +5,9 @@ const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
 const Self = @This();
-const Options = zora.Instance.Options;
 const Error = zora.Instance.Error;
 const GenericError = zora.GenericError;
+const Options = zora.Instance.Options;
 
 const validation_layers: []const [*:0]const u8 = switch (zora.build_debug) {
     true => &.{"VK_LAYER_KHRONOS_validation"},
@@ -70,7 +70,7 @@ const VulkanLoader = switch (builtin.os.tag) {
         }
     },
 
-    else => struct {
+    .linux, .freebsd => struct {
         handle: std.DynLib,
 
         pub fn open() Error!VulkanLoader {
@@ -89,6 +89,8 @@ const VulkanLoader = switch (builtin.os.tag) {
             return @ptrCast(self.handle.lookup(T, name));
         }
     },
+
+    else => @compileError("unknown os"),
 };
 
 const Vtable = struct {
@@ -173,8 +175,7 @@ pub fn create(_: Options) Error!Self {
 
     std.log.debug("vulkan instance extensions:", .{});
     for (extensions) |ext| {
-        const name = std.mem.span(ext);
-        std.log.debug("\t\"{s}\"", .{name});
+        std.log.debug("\t\"{s}\"", .{std.mem.span(ext)});
     }
 
     // enable supported optional extensions
