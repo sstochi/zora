@@ -1,5 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const vk = @import("vulkan");
 const utils = @import("utils.zig");
 const zora = @import("../root.zig");
@@ -9,7 +8,7 @@ const Error = zora.Instance.Error;
 const GenericError = zora.GenericError;
 const Options = zora.Instance.Options;
 
-const validation_layers: []const [*:0]const u8 = switch (zora.build_debug) {
+const validation_layers: []const [*:0]const u8 = switch (zora.builtin.debug) {
     true => &.{"VK_LAYER_KHRONOS_validation"},
     false => &.{},
 };
@@ -18,12 +17,12 @@ const extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SURFACE_EXTENSION_NAME,
 };
 
-const optional_extensions: []const [*:0]const u8 = switch (builtin.os.tag) {
+const optional_extensions: []const [*:0]const u8 = switch (zora.builtin.platform) {
     .windows => &.{
         vk.VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
     },
 
-    .linux, .freebsd => &.{
+    .unix => &.{
         vk.VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
         vk.VK_KHR_XCB_SURFACE_EXTENSION_NAME,
         vk.VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME,
@@ -33,14 +32,14 @@ const optional_extensions: []const [*:0]const u8 = switch (builtin.os.tag) {
 };
 const max_optional_extensions = 4;
 
-const library_name: [:0]const u8 = switch (builtin.os.tag) {
+const library_name: [:0]const u8 = switch (zora.builtin.platform) {
     .windows => "vulkan-1.dll",
-    .linux, .freebsd => "libvulkan.so",
+    .unix => "libvulkan.so",
     .macos => "libvulkan.dylib",
     else => @compileError("unknown os"),
 };
 
-const VulkanLoader = switch (builtin.os.tag) {
+const VulkanLoader = switch (zora.builtin.platform) {
     // zig 0.16.0 removed windows from std.DynLib... Thanks, Andrew!
     .windows => struct {
         const BOOL = c_int;
@@ -70,7 +69,7 @@ const VulkanLoader = switch (builtin.os.tag) {
         }
     },
 
-    .linux, .freebsd => struct {
+    else => struct {
         handle: std.DynLib,
 
         pub fn open() Error!VulkanLoader {
@@ -89,8 +88,6 @@ const VulkanLoader = switch (builtin.os.tag) {
             return @ptrCast(self.handle.lookup(T, name));
         }
     },
-
-    else => @compileError("unknown os"),
 };
 
 const Vtable = struct {
@@ -125,9 +122,9 @@ pub fn create(_: Options) Error!Self {
     const max_properties = 128;
 
     const version = vk.VK_MAKE_VERSION(
-        zora.build_version.major,
-        zora.build_version.minor,
-        zora.build_version.patch,
+        zora.builtin.version.major,
+        zora.builtin.version.minor,
+        zora.builtin.version.patch,
     );
 
     const app_info = vk.VkApplicationInfo{

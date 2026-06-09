@@ -1,14 +1,8 @@
+pub const builtin = @import("builtin.zig");
+
 const std = @import("std");
-const build_options = @import("options");
-const manifest = @import("manifest");
-const builtin = @import("builtin");
 
-pub const BackendType = @TypeOf(build_options.backend);
-pub const build_debug: bool = builtin.mode == .Debug or builtin.mode == .ReleaseSafe;
-pub const build_backend: BackendType = build_options.backend;
-pub const build_version: std.SemanticVersion = std.SemanticVersion.parse(manifest.version) catch @compileError("failed to parse version");
-
-const backend = switch (build_options.backend) {
+const backend = switch (builtin.backend) {
     .vulkan => @import("vulkan/backend.zig"),
     else => @compileError("unknown backend"),
 };
@@ -32,9 +26,9 @@ pub const WindowInfoUnix = union(enum) {
     wayland: struct { display: ?*anyopaque, surface: ?*anyopaque },
 };
 
-pub const WindowInfo = switch (builtin.target.os.tag) {
+pub const WindowInfo = switch (builtin.platform) {
     .windows => WindowInfoWin32,
-    .linux, .freebsd => WindowInfoUnix,
+    .unix => WindowInfoUnix,
     else => @compileError("unknown os"),
 };
 
