@@ -234,7 +234,11 @@ pub fn destroy(self: *Self) void {
     self.loader.close();
 }
 
-pub fn getProcAddr(self: *const Self, comptime F: type, comptime name: [:0]const u8) GenericError!F {
+pub fn getProcAddr(
+    self: *const Self,
+    comptime F: type,
+    comptime name: [:0]const u8,
+) GenericError!F {
     return @ptrCast(self.proc_addr_fn_ptr(self.handle, name.ptr) orelse
         return error.LoaderFailed);
 }

@@ -75,7 +75,7 @@ pub const Adapter = struct {
     };
 
     pub const Info = struct {
-        vram_mb: ?u32,
+        vram_mb: ?u64,
         device_id: u32,
         vendor_id: u32,
         max_samplers: u32,
