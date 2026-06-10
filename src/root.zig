@@ -6,9 +6,6 @@ pub const backend = switch (builtin.backend) {
     else => @compileError("unknown backend"),
 };
 
-pub const PowerMode = enum { integrated, discrete };
-pub const VsyncMode = enum { disabled, enabled, adaptive, mailbox };
-
 pub const GenericError = error{
     AllocationFailed,
     LoaderFailed,
@@ -261,3 +258,6 @@ pub const WindowInfo = switch (builtin.platform) {
 
     else => @compileError("unknown os"),
 };
+
+pub const PowerMode = enum { integrated, discrete };
+pub const VsyncMode = enum { disabled, enabled, adaptive, mailbox };
