@@ -44,9 +44,10 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
 
     // decide on the best present mode
     const target_mode: vk.VkPresentModeKHR = switch (options.vsync_mode) {
-        .auto, .enabled => vk.VK_PRESENT_MODE_FIFO_KHR,
-        .adaptive => vk.VK_PRESENT_MODE_FIFO_RELAXED_KHR,
         .disabled => vk.VK_PRESENT_MODE_IMMEDIATE_KHR,
+        .enabled => vk.VK_PRESENT_MODE_FIFO_KHR,
+        .adaptive => vk.VK_PRESENT_MODE_FIFO_RELAXED_KHR,
+        .mailbox => vk.VK_PRESENT_MODE_MAILBOX_KHR,
     };
 
     // sort based on favourability
@@ -140,6 +141,7 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
             .vsync_mode = switch (mode_buffer[0]) {
                 vk.VK_PRESENT_MODE_FIFO_KHR => .enabled,
                 vk.VK_PRESENT_MODE_FIFO_RELAXED_KHR => .adaptive,
+                vk.VK_PRESENT_MODE_MAILBOX_KHR => .mailbox,
                 else => .disabled,
             },
         },

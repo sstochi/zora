@@ -2,7 +2,6 @@
 #include "vulkan/vulkan_core.h"
 
 #if defined(_WIN32)
-
 typedef unsigned long DWORD;
 typedef wchar_t* LPCWSTR;
 typedef void* HINSTANCE;
@@ -13,6 +12,11 @@ typedef struct _HWND* HWND;
 typedef struct _SECURITY_ATTRIBUTES SECURITY_ATTRIBUTES;
 
 #include "vulkan/vulkan_win32.h"
+#elif defined(__ANDROID__)
+struct ANativeWindow;
+struct AHardwareBuffer;
+
+#include "vulkan/vulkan_android.h"
 #elif defined(__unix__)
 #include <stdint.h>
 
@@ -28,7 +32,6 @@ struct wl_surface;
 #include "vulkan/vulkan_xcb.h"
 #include "vulkan/vulkan_wayland.h"
 #include "vulkan/vulkan_xlib.h"
-
 #endif
 
 #include "vulkan/vulkan.h"

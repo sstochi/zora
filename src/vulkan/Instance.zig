@@ -18,7 +18,7 @@ const extensions: []const [*:0]const u8 = &.{
 };
 
 const optional_extensions: []const [*:0]const u8 = switch (zora.builtin.platform) {
-    .windows => &.{
+    .win32 => &.{
         vk.VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
     },
 
@@ -28,20 +28,23 @@ const optional_extensions: []const [*:0]const u8 = switch (zora.builtin.platform
         vk.VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME,
     },
 
+    .android => &.{
+        vk.VK_KHR_ANDROID_SURFACE_EXTENSION_NAME,
+    },
+
     else => @compileError("unknown os"),
 };
 const max_optional_extensions = 4;
 
 const library_name: [:0]const u8 = switch (zora.builtin.platform) {
-    .windows => "vulkan-1.dll",
-    .unix => "libvulkan.so",
+    .win32 => "vulkan-1.dll",
+    .unix, .android => "libvulkan.so",
     .macos => "libvulkan.dylib",
-    else => @compileError("unknown os"),
 };
 
 const VulkanLoader = switch (zora.builtin.platform) {
     // zig 0.16.0 removed windows from std.DynLib... Thanks, Andrew!
-    .windows => struct {
+    .win32 => struct {
         const BOOL = c_int;
         const HMODULE = ?*anyopaque;
         const FARPROC = ?*const fn () callconv(.c) c_int;

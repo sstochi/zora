@@ -1,35 +1,17 @@
-pub const builtin = @import("builtin.zig");
-
 const std = @import("std");
 
-const backend = switch (builtin.backend) {
+pub const builtin = @import("builtin.zig");
+pub const backend = switch (builtin.backend) {
     .vulkan => @import("vulkan/backend.zig"),
     else => @compileError("unknown backend"),
 };
 
-pub const VsyncMode = enum { auto, disabled, enabled, adaptive };
 pub const PowerMode = enum { integrated, discrete };
+pub const VsyncMode = enum { disabled, enabled, adaptive, mailbox };
 
 pub const GenericError = error{
     AllocationFailed,
     LoaderFailed,
-};
-
-pub const WindowInfoWin32 = struct {
-    hinstance: ?*anyopaque,
-    hwnd: ?*anyopaque,
-};
-
-pub const WindowInfoUnix = union(enum) {
-    xlib: struct { display: ?*anyopaque, window: c_ulong },
-    xcb: struct { connection: ?*anyopaque, window: u32 },
-    wayland: struct { display: ?*anyopaque, surface: ?*anyopaque },
-};
-
-pub const WindowInfo = switch (builtin.platform) {
-    .windows => WindowInfoWin32,
-    .unix => WindowInfoUnix,
-    else => @compileError("unknown os"),
 };
 
 pub const Instance = struct {
@@ -259,4 +241,23 @@ pub const Sampler = struct {
     pub inline fn info(self: *const Sampler) *const Info {
         return self.inner.info();
     }
+};
+
+pub const WindowInfo = switch (builtin.platform) {
+    .win32 => struct {
+        hinstance: ?*anyopaque,
+        hwnd: ?*anyopaque,
+    },
+
+    .unix => union(enum) {
+        xlib: struct { display: ?*anyopaque, window: c_ulong },
+        xcb: struct { connection: ?*anyopaque, window: u32 },
+        wayland: struct { display: ?*anyopaque, surface: ?*anyopaque },
+    },
+
+    .android => struct {
+        window: ?*anyopaque,
+    },
+
+    else => @compileError("unknown os"),
 };

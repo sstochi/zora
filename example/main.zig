@@ -38,7 +38,13 @@ pub fn main(_: std.process.Init) !void {
     } else outer: {
         const hinstance = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, null);
         const hwnd = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null);
-        break :outer zora.Adapter.open(&instance, .{ .hinstance = hinstance, .hwnd = hwnd }, .discrete);
+        break :outer zora.Adapter.open(&instance, .{
+            .power_mode = .discrete,
+            .window_info = .{
+                .hinstance = hinstance,
+                .hwnd = hwnd,
+            },
+        });
     };
     defer adapter.close();
 

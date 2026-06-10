@@ -279,8 +279,8 @@ fn createSurface(
     instance: *const Instance,
     window_info: zora.WindowInfo,
 ) Error!vk.VkSurfaceKHR {
-    return try switch (@TypeOf(window_info)) {
-        zora.WindowInfoWin32 => createSurfaceGeneric(
+    return try switch (zora.builtin.platform) {
+        .win32 => createSurfaceGeneric(
             "vkCreateWin32SurfaceKHR",
             instance,
             vk.VkWin32SurfaceCreateInfoKHR{
@@ -290,7 +290,7 @@ fn createSurface(
             },
         ),
 
-        zora.WindowInfoUnix => switch (window_info) {
+        .unix => switch (window_info) {
             .xlib => |xlib| createSurfaceGeneric(
                 "vkCreateXlibSurfaceKHR",
                 instance,
@@ -321,6 +321,15 @@ fn createSurface(
                 },
             ),
         },
+
+        .android => createSurfaceGeneric(
+            "vkCreateAndroidSurfaceKHR",
+            instance,
+            vk.VkAndroidSurfaceCreateInfoKHR{
+                .sType = vk.VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR,
+                .window = @ptrCast(@alignCast(window_info.window)),
+            },
+        ),
 
         else => @compileError("unknown window info"),
     };

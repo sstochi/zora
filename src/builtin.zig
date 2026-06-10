@@ -10,17 +10,23 @@ pub const version: std.SemanticVersion = std.SemanticVersion.parse(manifest.vers
 
 pub const Platform = enum {
     // Tier 1
+
+    /// Linux, FreeBSD, OpenBSD, NetBSD
     unix,
-    windows,
+    /// Microsoft Windows
+    win32,
 
     // Tier 2
-    macos,
+
+    /// Google Android
     android,
+    /// Apple MacOS
+    macos,
 };
 
 pub const platform: Platform = switch (builtin.os.tag) {
+    .windows => .win32,
     .macos, .freebsd, .netbsd, .dragonfly, .openbsd => .unix,
     .linux => if (builtin.abi.isAndroid()) .android else .unix,
-    .windows => .windows,
     else => @panic("unknown os"),
 };

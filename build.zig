@@ -19,12 +19,6 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path(b.fmt("headers/{s}.h", .{@tagName(backend)})),
     });
 
-    // zig doesn't set this macro itself for some reason, presumably because of their migration
-    // away from clang...
-    if (target.result.os.tag == .windows) {
-        translate_headers.defineCMacro("_WIN32", null);
-    }
-
     const zora = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
