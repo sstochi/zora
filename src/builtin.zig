@@ -4,10 +4,6 @@ const builtin = @import("builtin");
 const manifest = @import("manifest");
 
 pub const Backend = @TypeOf(options.backend);
-pub const backend: Backend = options.backend;
-pub const debug: bool = builtin.mode == .Debug or builtin.mode == .ReleaseSafe;
-pub const version: std.SemanticVersion = std.SemanticVersion.parse(manifest.version) catch @compileError("failed to parse version");
-
 pub const Platform = enum {
     // Tier 1
 
@@ -24,9 +20,17 @@ pub const Platform = enum {
     macos,
 };
 
+pub const backend: Backend = options.backend;
+pub const debug: bool = builtin.mode == .Debug or builtin.mode == .ReleaseSafe;
+
+pub const version: std.SemanticVersion = std.SemanticVersion.parse(
+    manifest.version,
+) catch @compileError("failed to parse version");
+
 pub const platform: Platform = switch (builtin.os.tag) {
     .windows => .win32,
-    .macos, .freebsd, .netbsd, .dragonfly, .openbsd => .unix,
+    .freebsd, .netbsd, .dragonfly, .openbsd => .unix,
     .linux => if (builtin.abi.isAndroid()) .android else .unix,
+    .macos => .macos,
     else => @panic("unknown os"),
 };
