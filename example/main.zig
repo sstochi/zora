@@ -48,7 +48,17 @@ pub fn main(_: std.process.Init) !void {
     };
     defer adapter.close();
 
-    var swapchain = try adapter.createSwapchain(.{ .width = 640, .height = 360, .vsync_mode = .adaptive });
+    var shader = try adapter.createShader(.{
+        .stages = &.{},
+        .spirv = @embedFile("test.spv"),
+    });
+    defer shader.destroy();
+
+    var swapchain = try adapter.createSwapchain(.{
+        .width = 640,
+        .height = 360,
+        .vsync_mode = .mailbox,
+    });
     defer swapchain.destroy();
 
     const info = adapter.info();

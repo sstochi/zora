@@ -135,6 +135,7 @@ pub const Swapchain = struct {
         self.inner.destroy();
     }
 
+    /// This function should only be called on main thread.
     pub inline fn present(self: *Swapchain) void {
         self.inner.present();
     }
@@ -148,7 +149,10 @@ pub const Swapchain = struct {
 /// Must never outlive parent `Adapter`.
 pub const Shader = struct {
     pub const InnerType = backend.Shader;
-    pub const Error = error{} || GenericError;
+    pub const Error = error{
+        CompilationFailed,
+        ShaderCreationFailed,
+    } || GenericError;
 
     pub const StageType = enum {
         vertex,
@@ -171,7 +175,10 @@ pub const Shader = struct {
 
     pub const Options = struct {
         stages: []const Stage,
-        spirv: []const u8,
+
+        /// SpirV bytecode is required to be aligned to u32.
+        spirv: []align(@alignOf(u32)) const u8,
+
         /// Optional to include, improves compatability with
         /// OpenGL pre-4.6
         glsl: ?[]const u8 = null,
@@ -182,6 +189,11 @@ pub const Shader = struct {
     };
 
     inner: InnerType,
+
+    /// This function should only be called on main thread.
+    pub inline fn destroy(self: *Shader) void {
+        self.inner.destroy();
+    }
 
     /// This function is safe to call on any thread.
     pub inline fn info(self: *const Shader) *const Info {

@@ -370,7 +370,7 @@ fn findPhyDevice(
     surface: vk.VkSurfaceKHR,
     power_mode: zora.PowerMode,
 ) zora.Adapter.Error!PhysicalDevice {
-    const max_devices: u32 = 16;
+    const max_devices: u32 = 32;
 
     var device_buffer: [max_devices]PhysicalDevice = undefined;
     var handle_buffer: [max_devices]vk.VkPhysicalDevice = undefined;
