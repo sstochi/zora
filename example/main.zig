@@ -14,43 +14,58 @@ pub fn main(_: std.process.Init) !void {
     var instance = try zora.Instance.create(.{});
     defer instance.destroy();
 
-    var adapter = try if (builtin.os.tag != .windows) outer: {
-        const window_info: zora.WindowInfo = if (std.mem.eql(u8, driver_name, "x11")) blk: {
-            const display = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_X11_DISPLAY_POINTER, null);
-            const handle = sdl.SDL_GetNumberProperty(props, sdl.SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
-            break :blk .{ .xlib = .{
-                .display = display,
-                .window = @intCast(handle),
-            } };
-        } else if (std.mem.eql(u8, driver_name, "wayland")) blk: {
-            const display = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, null);
-            const surface = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, null);
-            break :blk .{ .wayland = .{
-                .display = display,
-                .surface = surface,
-            } };
-        } else return error.InvalidBackend;
+    var adapter = try outer: switch (zora.builtin.platform) {
+        .win32 => {
+            const hinstance = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, null);
+            const hwnd = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null);
+            break :outer zora.Adapter.open(&instance, .{
+                .power_mode = .discrete,
+                .window_info = .{
+                    .hinstance = hinstance,
+                    .hwnd = hwnd,
+                },
+            });
+        },
 
-        break :outer zora.Adapter.open(&instance, .{
-            .power_mode = .discrete,
-            .window_info = window_info,
-        });
-    } else outer: {
-        const hinstance = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, null);
-        const hwnd = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null);
-        break :outer zora.Adapter.open(&instance, .{
-            .power_mode = .discrete,
-            .window_info = .{
-                .hinstance = hinstance,
-                .hwnd = hwnd,
-            },
-        });
+        .unix => {
+            const window_info: zora.WindowInfo = if (std.mem.eql(u8, driver_name, "x11")) blk: {
+                const display = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_X11_DISPLAY_POINTER, null);
+                const handle = sdl.SDL_GetNumberProperty(props, sdl.SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
+                break :blk .{ .xlib = .{
+                    .display = display,
+                    .window = @intCast(handle),
+                } };
+            } else if (std.mem.eql(u8, driver_name, "wayland")) blk: {
+                const display = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, null);
+                const surface = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, null);
+                break :blk .{ .wayland = .{
+                    .display = display,
+                    .surface = surface,
+                } };
+            } else return error.InvalidBackend;
+
+            break :outer zora.Adapter.open(&instance, .{
+                .power_mode = .discrete,
+                .window_info = window_info,
+            });
+        },
+
+        else => @compileError("unsupported os"),
     };
     defer adapter.close();
 
     var shader = try adapter.createShader(.{
-        .stages = &.{},
-        .spirv = @embedFile("test.spv"),
+        .vertex = .{
+            .entrypoint = "main",
+            .spirv = @alignCast(@embedFile("test.vert.spv")),
+            .glsl = @alignCast(@embedFile("test.vert.glsl")),
+        },
+
+        .fragment = .{
+            .entrypoint = "main",
+            .spirv = @alignCast(@embedFile("test.frag.spv")),
+            .glsl = @alignCast(@embedFile("test.frag.glsl")),
+        },
     });
     defer shader.destroy();
 

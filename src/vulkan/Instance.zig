@@ -8,11 +8,6 @@ const Error = zora.Instance.Error;
 const GenericError = zora.GenericError;
 const Options = zora.Instance.Options;
 
-const validation_layers: []const [*:0]const u8 = switch (zora.builtin.debug) {
-    true => &.{"VK_LAYER_KHRONOS_validation"},
-    false => &.{},
-};
-
 const extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SURFACE_EXTENSION_NAME,
 };
@@ -35,6 +30,11 @@ const optional_extensions: []const [*:0]const u8 = switch (zora.builtin.platform
     else => @compileError("unknown os"),
 };
 const max_optional_extensions = 4;
+
+const validation_layers: []const [*:0]const u8 = switch (zora.builtin.debug) {
+    true => &.{"VK_LAYER_KHRONOS_validation"},
+    false => &.{},
+};
 
 const library_name: [:0]const u8 = switch (zora.builtin.platform) {
     .win32 => "vulkan-1.dll",

@@ -207,8 +207,12 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
 
     // create vulkan device
     var device: vk.VkDevice = null;
-    const result = instance.vtable.createDevice(phy_device.handle, &create_info, null, &device);
-    try utils.except(result, error.AdapterAcquisitionFailed);
+    try utils.except(instance.vtable.createDevice(
+        phy_device.handle,
+        &create_info,
+        null,
+        &device,
+    ), error.AdapterAcquisitionFailed);
 
     const vtable = utils.loadVtable(
         Vtable,
