@@ -149,7 +149,7 @@ pub fn create(_: Options) Error!Self {
     var loader = try VulkanLoader.open();
     errdefer loader.close();
 
-    log.info("loading essential delegates ...", .{});
+    log.debug("loading essential delegates ...", .{});
     const get_proc_addr = loader.lookup(
         *const @TypeOf(vk.vkGetInstanceProcAddr),
         "vkGetInstanceProcAddr",

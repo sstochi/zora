@@ -74,6 +74,8 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
 }
 
 pub fn destroy(self: *Self) void {
+    _ = self.adapter.vtable.deviceWaitIdle(self.adapter.handle);
+
     for (0..self.stage_count) |i| {
         self.adapter.vtable.destroyShaderModule(
             self.adapter.handle,

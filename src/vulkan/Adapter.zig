@@ -158,6 +158,7 @@ const Vtable = struct {
     destroySemaphore: *const @TypeOf(vk.vkDestroySemaphore),
     destroySwapchainKHR: *const @TypeOf(vk.vkDestroySwapchainKHR),
 
+    deviceWaitIdle: *const @TypeOf(vk.vkDeviceWaitIdle),
     acquireNextImageKHR: *const @TypeOf(vk.vkAcquireNextImageKHR),
     queuePresentKHR: *const @TypeOf(vk.vkQueuePresentKHR),
 };

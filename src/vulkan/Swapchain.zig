@@ -73,7 +73,7 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
 
     log.info("present modes:", .{});
     for (0..mode_count) |i| {
-        std.log.info(" {?s}", .{std.enums.tagName(utils.PresentMode, @enumFromInt(mode_buffer[i]))});
+        log.info(" {?s}", .{std.enums.tagName(utils.PresentMode, @enumFromInt(mode_buffer[i]))});
     }
 
     const max_image_count = switch (capabilities.maxImageCount) {
@@ -112,9 +112,14 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     };
 
     // create swapchain khr
+    log.debug("creating vulkan swapchain ...", .{});
     var handle: vk.VkSwapchainKHR = undefined;
-    const result = adapter.vtable.createSwapchainKHR(adapter.handle, &create_info, null, &handle);
-    try utils.except(result, error.SwapchainCreationFailed);
+    try utils.except(adapter.vtable.createSwapchainKHR(
+        adapter.handle,
+        &create_info,
+        null,
+        &handle,
+    ), error.SwapchainCreationFailed);
     errdefer adapter.vtable.destroySwapchainKHR(adapter.handle, handle, null);
 
     var acquire_image_sem: vk.VkSemaphore = undefined;
@@ -158,6 +163,9 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
 }
 
 pub fn destroy(self: *Self) void {
+    _ = self.adapter.vtable.deviceWaitIdle(self.adapter.handle);
+
+    log.debug("destroying vulkan swapchain ...", .{});
     self.adapter.vtable.destroySwapchainKHR(
         self.adapter.handle,
         self.handle,
@@ -198,7 +206,11 @@ pub fn info(self: *const Self) *const Info {
     return &self.chain_info;
 }
 
-fn formatCompareLessThan(_: void, a: vk.VkSurfaceFormatKHR, b: vk.VkSurfaceFormatKHR) bool {
+fn formatCompareLessThan(
+    _: void,
+    a: vk.VkSurfaceFormatKHR,
+    b: vk.VkSurfaceFormatKHR,
+) bool {
     const score_fn = struct {
         pub fn impl(self: vk.VkSurfaceFormatKHR) u32 {
             const format_score: u32 = switch (@as(utils.Format, @enumFromInt(self.format))) {
@@ -220,6 +232,10 @@ fn formatCompareLessThan(_: void, a: vk.VkSurfaceFormatKHR, b: vk.VkSurfaceForma
     return score_fn(b) < score_fn(a);
 }
 
-fn presentModeCompareLessThan(target: vk.VkPresentModeKHR, a: vk.VkPresentModeKHR, b: vk.VkPresentModeKHR) bool {
-    return @intFromBool(a == target) < @intFromBool(b == target);
+fn presentModeCompareLessThan(
+    target: vk.VkPresentModeKHR,
+    a: vk.VkPresentModeKHR,
+    b: vk.VkPresentModeKHR,
+) bool {
+    return @intFromBool(b == target) < @intFromBool(a == target);
 }

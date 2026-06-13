@@ -344,7 +344,7 @@ pub inline fn loadVtable(
     const fields = @typeInfo(V).@"struct".fields;
     var table: V = undefined;
 
-    log.debug("loading vtable ({} total) ...", .{fields.len});
+    log.debug("loading vtable ({} total):", .{fields.len});
     inline for (fields) |field| {
         const name: [:0]const u8 = "vk" ++ .{
             std.ascii.toUpper(field.name[0]),
