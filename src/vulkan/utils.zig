@@ -3,6 +3,8 @@ const vk = @import("vulkan");
 const builtin = @import("builtin");
 const zora = @import("../root.zig");
 
+const log = std.log.scoped(.utils);
+
 pub const Format = enum(c_int) {
     unknown = vk.VK_FORMAT_UNDEFINED,
     r4g4_unorm_pack8 = vk.VK_FORMAT_R4G4_UNORM_PACK8,
@@ -339,15 +341,16 @@ pub inline fn loadVtable(
     get_proc_addr: anytype,
     arg: anytype,
 ) ?V {
+    const fields = @typeInfo(V).@"struct".fields;
     var table: V = undefined;
 
-    std.log.debug("loading vtable:", .{});
-    inline for (@typeInfo(V).@"struct".fields) |field| {
+    log.debug("loading vtable ({} total) ...", .{fields.len});
+    inline for (fields) |field| {
         const name: [:0]const u8 = "vk" ++ .{
             std.ascii.toUpper(field.name[0]),
         } ++ field.name[1..];
 
-        std.log.debug("\t\"{s}\"", .{name});
+        log.debug(" delegate \"{s}\" ...", .{name});
         @field(table, field.name) = @ptrCast(
             get_proc_addr(arg, name.ptr) orelse return null,
         );
@@ -356,11 +359,14 @@ pub inline fn loadVtable(
     return table;
 }
 
-pub inline fn except(result: vk.VkResult, default_error: anytype) (@TypeOf(default_error) || zora.GenericError)!void {
+pub inline fn except(
+    result: vk.VkResult,
+    default_error: anytype,
+) (@TypeOf(default_error) || zora.GenericError)!void {
     return switch (result) {
         vk.VK_ERROR_OUT_OF_HOST_MEMORY,
         vk.VK_ERROR_OUT_OF_DEVICE_MEMORY,
-        => error.AllocationFailed,
+        => error.OutOfMemory,
 
         vk.VK_SUCCESS, vk.VK_INCOMPLETE => {},
         else => default_error,

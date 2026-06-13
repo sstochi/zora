@@ -3,6 +3,8 @@ const vk = @import("vulkan");
 const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
+const log = std.log.scoped(.swapchain);
+
 const Instance = @import("Instance.zig");
 const Adapter = @import("Adapter.zig");
 
@@ -21,12 +23,22 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     const max_formats: u32 = 128;
     const max_modes: u32 = 8;
 
+    var capabilities: vk.VkSurfaceCapabilitiesKHR = undefined;
     var format_buffer: [max_formats]vk.VkSurfaceFormatKHR = undefined;
     var mode_buffer: [max_modes]vk.VkPresentModeKHR = undefined;
     var format_count = max_formats;
     var mode_count = max_modes;
 
-    // query surface formats...
+    log.debug("querying supported properties ...", .{});
+
+    // query capabilities
+    try utils.except(adapter.instance.vtable.getPhysicalDeviceSurfaceCapabilitiesKHR(
+        adapter.phy_device.handle,
+        adapter.surface,
+        &capabilities,
+    ), error.SwapchainCreationFailed);
+
+    // ... surface formats...
     try utils.except(adapter.instance.vtable.getPhysicalDeviceSurfacePresentModesKHR(
         adapter.phy_device.handle,
         adapter.surface,
@@ -42,7 +54,7 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
         &format_buffer,
     ), error.SwapchainCreationFailed);
 
-    // decide on the best present mode
+    // decide on the target present mode
     const target_mode: vk.VkPresentModeKHR = switch (options.vsync_mode) {
         .disabled => vk.VK_PRESENT_MODE_IMMEDIATE_KHR,
         .enabled => vk.VK_PRESENT_MODE_FIFO_KHR,
@@ -54,23 +66,15 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     std.mem.sort(vk.VkPresentModeKHR, mode_buffer[0..mode_count], target_mode, presentModeCompareLessThan);
     std.mem.sort(vk.VkSurfaceFormatKHR, format_buffer[0..format_count], {}, formatCompareLessThan);
 
-    std.log.debug("surface formats:", .{});
+    log.info("surface formats:", .{});
     for (0..format_count) |i| {
-        std.log.debug("\t{?s}", .{std.enums.tagName(utils.Format, @enumFromInt(format_buffer[i].format))});
+        log.info(" {?s}", .{std.enums.tagName(utils.Format, @enumFromInt(format_buffer[i].format))});
     }
 
-    std.log.debug("present modes:", .{});
+    log.info("present modes:", .{});
     for (0..mode_count) |i| {
-        std.log.debug("\t{?s}", .{std.enums.tagName(utils.PresentMode, @enumFromInt(mode_buffer[i]))});
+        std.log.info(" {?s}", .{std.enums.tagName(utils.PresentMode, @enumFromInt(mode_buffer[i]))});
     }
-
-    // query capabilities
-    var capabilities: vk.VkSurfaceCapabilitiesKHR = undefined;
-    try utils.except(adapter.instance.vtable.getPhysicalDeviceSurfaceCapabilitiesKHR(
-        adapter.phy_device.handle,
-        adapter.surface,
-        &capabilities,
-    ), error.SwapchainCreationFailed);
 
     const max_image_count = switch (capabilities.maxImageCount) {
         0 => std.math.maxInt(u32), // in vulkan, 0 means "unlimited"

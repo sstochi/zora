@@ -3,6 +3,12 @@ const vk = @import("vulkan");
 const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
+const log = std.log.scoped(.adapter);
+
+const extensions: []const [*:0]const u8 = &.{
+    vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+};
+
 const Self = @This();
 const Instance = @import("Instance.zig");
 const Swapchain = @import("Swapchain.zig");
@@ -12,10 +18,6 @@ const Error = zora.Adapter.Error;
 const GenericError = zora.GenericError;
 const Options = zora.Adapter.Options;
 const Info = zora.Adapter.Info;
-
-const extensions: []const [*:0]const u8 = &.{
-    vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-};
 
 const PhysicalDevice = struct {
     name: [256]u8,
@@ -206,6 +208,7 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
     };
 
     // create vulkan device
+    log.debug("creating vulkan device ...", .{});
     var device: vk.VkDevice = null;
     try utils.except(instance.vtable.createDevice(
         phy_device.handle,
@@ -214,17 +217,17 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
         &device,
     ), error.AdapterAcquisitionFailed);
 
-    const vtable = utils.loadVtable(
-        Vtable,
-        instance.vtable.getDeviceProcAddr,
-        device,
-    ) orelse return error.LoaderFailed;
-
     const destroy_device = try instance.getProcAddr(
         *const @TypeOf(vk.vkDestroyDevice),
         "vkDestroyDevice",
     );
     errdefer destroy_device(device, null);
+
+    const vtable = utils.loadVtable(
+        Vtable,
+        instance.vtable.getDeviceProcAddr,
+        device,
+    ) orelse return error.LoaderFailed;
 
     // retrieve graphics and surface queues for later use
     var graphics_queue: vk.VkQueue = null;
@@ -244,11 +247,14 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
 }
 
 pub fn close(self: *Self) void {
+    log.debug("destroying vulkan surface ...", .{});
     self.instance.vtable.destroySurfaceKHR(
         self.instance.handle,
         self.surface,
         null,
     );
+
+    log.debug("destroying vulkan device ...", .{});
     self.instance.vtable.destroyDevice(self.handle, null);
 }
 
@@ -283,7 +289,8 @@ fn createSurface(
     instance: *const Instance,
     window_info: zora.WindowInfo,
 ) Error!vk.VkSurfaceKHR {
-    return try switch (zora.builtin.platform) {
+    log.debug("creating vulkan surface ...", .{});
+    return try switch (zora.builtin.target) {
         .win32 => createSurfaceGeneric(
             "vkCreateWin32SurfaceKHR",
             instance,
@@ -344,6 +351,7 @@ fn createSurfaceGeneric(
     instance: *const Instance,
     create_info: anytype,
 ) Error!vk.VkSurfaceKHR {
+    log.debug("loading delegate \"{s}\" ...", .{name});
     const F = ?*const fn (
         vk.VkInstance,
         ?*const @TypeOf(create_info),
@@ -381,6 +389,8 @@ fn findPhyDevice(
     var device_count: usize = 0;
     var handle_count: u32 = max_devices;
 
+    log.debug("querying vulkan physical devices ...", .{});
+
     // enumerate all physical devices
     try utils.except(instance.vtable.enumeratePhysicalDevices(
         instance.handle,
@@ -400,9 +410,9 @@ fn findPhyDevice(
     const slice = device_buffer[0..device_count];
     std.mem.sort(PhysicalDevice, slice, power_mode, PhysicalDevice.compareLessThan);
 
-    std.log.debug("list of vulkan adapters:", .{});
+    log.info("available devices:", .{});
     for (slice) |*phy| {
-        std.log.debug("\t\"{s}\" ({?} mb, vendor_id 0x{x}, device_id 0x{x})", .{
+        log.info(" \"{s}\" ({?} mb, vendor_id 0x{x}, device_id 0x{x})", .{
             std.mem.sliceTo(&phy.name, 0),
             phy.info.vram_mb,
             phy.info.vendor_id,

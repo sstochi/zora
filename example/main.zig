@@ -14,7 +14,7 @@ pub fn main(_: std.process.Init) !void {
     var instance = try zora.Instance.create(.{});
     defer instance.destroy();
 
-    var adapter = try outer: switch (zora.builtin.platform) {
+    var adapter = try outer: switch (zora.builtin.target) {
         .win32 => {
             const hinstance = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, null);
             const hwnd = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null);

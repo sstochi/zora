@@ -3,16 +3,13 @@ const vk = @import("vulkan");
 const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
-const Self = @This();
-const Error = zora.Instance.Error;
-const GenericError = zora.GenericError;
-const Options = zora.Instance.Options;
+const log = std.log.scoped(.instance);
 
 const extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SURFACE_EXTENSION_NAME,
 };
 
-const optional_extensions: []const [*:0]const u8 = switch (zora.builtin.platform) {
+const optional_extensions: []const [*:0]const u8 = switch (zora.builtin.target) {
     .win32 => &.{
         vk.VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
     },
@@ -36,13 +33,18 @@ const validation_layers: []const [*:0]const u8 = switch (zora.builtin.debug) {
     false => &.{},
 };
 
-const library_name: [:0]const u8 = switch (zora.builtin.platform) {
+const library_name: [:0]const u8 = switch (zora.builtin.target) {
     .win32 => "vulkan-1.dll",
     .unix, .android => "libvulkan.so",
     .macos => "libvulkan.dylib",
 };
 
-const VulkanLoader = switch (zora.builtin.platform) {
+const Self = @This();
+const Error = zora.Instance.Error;
+const GenericError = zora.GenericError;
+const Options = zora.Instance.Options;
+
+const VulkanLoader = switch (zora.builtin.target) {
     // zig 0.16.0 removed windows from std.DynLib... Thanks, Andrew!
     .win32 => struct {
         const BOOL = c_int;
@@ -143,9 +145,11 @@ pub fn create(_: Options) Error!Self {
     var query_count: u32 = max_properties;
 
     // load vulkan lib
+    log.info("loading vulkan lib ...", .{});
     var loader = try VulkanLoader.open();
     errdefer loader.close();
 
+    log.info("loading essential delegates ...", .{});
     const get_proc_addr = loader.lookup(
         *const @TypeOf(vk.vkGetInstanceProcAddr),
         "vkGetInstanceProcAddr",
@@ -173,19 +177,20 @@ pub fn create(_: Options) Error!Self {
     var ext_count = extensions.len;
     @memcpy(ext_buffer[0..extensions.len], extensions);
 
-    std.log.debug("vulkan instance extensions:", .{});
+    log.info("required extensions:", .{});
     for (extensions) |ext| {
-        std.log.debug("\t\"{s}\"", .{std.mem.span(ext)});
+        log.info(" \"{s}\"", .{std.mem.span(ext)});
     }
 
     // enable supported optional extensions
+    log.info("supported optional extensions:", .{});
     for (optional_extensions) |ext| {
         const opt_name = std.mem.span(ext);
 
         for (0..query_count) |i| {
             const name = std.mem.sliceTo(&query_buffer[i].extensionName, 0);
             if (std.mem.eql(u8, name, opt_name)) {
-                std.log.debug("\t\"{s}\"", .{name});
+                log.info(" \"{s}\"", .{name});
                 ext_buffer[ext_count] = ext;
                 ext_count += 1;
                 break;
@@ -203,6 +208,7 @@ pub fn create(_: Options) Error!Self {
     };
 
     // create vulkan instance
+    log.debug("creating vulkan instance ...", .{});
     var instance: vk.VkInstance = null;
     try utils.except(
         createInstance(&create_info, null, &instance),
@@ -231,6 +237,7 @@ pub fn create(_: Options) Error!Self {
 }
 
 pub fn destroy(self: *Self) void {
+    log.debug("destroying vulkan instance ...", .{});
     self.vtable.destroyInstance(self.handle, null);
     self.loader.close();
 }

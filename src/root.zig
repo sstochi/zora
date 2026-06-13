@@ -1,14 +1,89 @@
 const std = @import("std");
 
 pub const builtin = @import("builtin.zig");
+/// A collection of types that are safe to use inside vertex and uniform data.
+pub const pod = @import("pod.zig");
+
 pub const backend = switch (builtin.backend) {
     .vulkan => @import("vulkan/backend.zig"),
     else => @compileError("unknown backend"),
 };
 
 pub const GenericError = error{
-    AllocationFailed,
+    /// Allocation failed due to fragmented/lack of available memory.
+    OutOfMemory,
+
+    ///
     LoaderFailed,
+};
+
+pub const Offset2D = struct { x: u32, y: u32 };
+pub const Offset3D = struct { x: u32, y: u32, z: u32 };
+pub const Extent2D = struct { w: u32, h: u32 };
+pub const Extent3D = struct { w: u32, h: u32, d: u32 };
+
+pub const PowerMode = enum { integrated, discrete };
+pub const VsyncMode = enum { disabled, enabled, adaptive, mailbox };
+
+pub const WriteMask = packed struct { r: bool, g: bool, b: bool, a: bool };
+pub const FrontFace = enum { clockwise, counter_clockwise };
+pub const CullMode = enum { none, back, front };
+
+pub const BlendFactor = enum {
+    zero,
+    one,
+    src_color,
+    one_minus_src_color,
+    dst_color,
+    one_minus_dst_color,
+    src_alpha,
+    one_minus_src_alpha,
+    dst_alpha,
+    one_minus_dst_alpha,
+    constant_color,
+    one_minus_constant_color,
+    constant_alpha,
+    one_minus_constant_alpha,
+    src_alpha_saturate,
+    src1_color,
+    one_minus_src1_color,
+    src1_alpha,
+    one_minus_src1_alpha,
+};
+
+pub const BlendOp = enum {
+    add,
+    sub,
+    reverse_sub,
+    min,
+    max,
+};
+
+pub const Topology = enum {
+    points,
+    lines,
+    line_strip,
+    triangles,
+    triangle_strip,
+};
+
+pub const WindowInfo = switch (builtin.target) {
+    .win32 => struct {
+        hinstance: ?*anyopaque,
+        hwnd: ?*anyopaque,
+    },
+
+    .unix => union(enum) {
+        xlib: struct { display: ?*anyopaque, window: c_ulong },
+        xcb: struct { connection: ?*anyopaque, window: u32 },
+        wayland: struct { display: ?*anyopaque, surface: ?*anyopaque },
+    },
+
+    .android => struct {
+        window: ?*anyopaque,
+    },
+
+    else => @compileError("unknown os"),
 };
 
 pub const Instance = struct {
@@ -35,7 +110,7 @@ pub const Instance = struct {
 
 /// Must never outlive parent `Instance`.
 pub const Adapter = struct {
-    pub const Impl = backend.Adapter;
+    pub const InnerType = backend.Adapter;
 
     pub const Error = error{
         AdapterAcquisitionFailed,
@@ -59,7 +134,7 @@ pub const Adapter = struct {
         power_mode: PowerMode,
     };
 
-    inner: Impl,
+    inner: InnerType,
 
     /// Attempts to find an adapter matching `preferred_options`.
     /// This function should only be called on main thread.
@@ -67,7 +142,7 @@ pub const Adapter = struct {
         instance: *Instance,
         options: Options,
     ) Error!Adapter {
-        return .{ .inner = try Impl.open(instance, options) };
+        return .{ .inner = try InnerType.open(instance, options) };
     }
 
     /// This function should only be called on main thread.
@@ -149,21 +224,11 @@ pub const Swapchain = struct {
 /// Must never outlive parent `Adapter`.
 pub const Shader = struct {
     pub const InnerType = backend.Shader;
+
     pub const Error = error{
         ShaderCreationFailed,
         CompilationFailed,
     } || GenericError;
-
-    pub const Bind = struct {
-        location: u32,
-
-        value: union(enum) {
-            /// Must remain valid for the lifetime of the `Shader`.
-            sampler: *const Sampler,
-            /// Must remain valid for the lifetime of the `Shader`.
-            texture: *const Texture,
-        },
-    };
 
     pub const Stage = struct {
         /// SpirV bytecode is required to be aligned to `u32`.
@@ -174,11 +239,9 @@ pub const Shader = struct {
         /// Must remain valid for the lifetime of the `Shader`.
         entrypoint: [:0]const u8 = "main",
 
-        /// Binding layout.
-        /// Must remain valid for the lifetime of the `Shader`.
-        binds: []const Bind = &.{},
-
         /// Optional, improves compatability with OpenGL.
+        /// Historically, SpirV support in OpenGL remained relatively poor, even
+        /// after it's introduction into the core spec.
         /// If not null, must remain valid for the lifetime of the `Shader`.
         glsl: ?[]const u8 = null,
     };
@@ -205,6 +268,58 @@ pub const Shader = struct {
 };
 
 /// Must never outlive parent `Adapter`.
+pub const Pipeline = struct {
+    pub const Info = Options;
+
+    pub const Error = error{
+        ShaderCreationFailed,
+        CompilationFailed,
+    } || GenericError;
+
+    pub const Bind = struct {
+        location: u32,
+
+        value: union(enum) {
+            /// Must remain valid for the lifetime of the `Shader`.
+            sampler: *const Sampler,
+            /// Must remain valid for the lifetime of the `Shader`.
+            texture: *const Texture,
+        },
+    };
+
+    pub const VertexState = struct {};
+
+    pub const BlendState = struct {
+        write_mask: WriteMask = .{ .r = true, .g = true, .b = true, .a = true },
+
+        color_src: BlendFactor = .src_alpha,
+        color_dst: BlendFactor = .one_minus_src_alpha,
+        color_op: BlendOp = .add,
+
+        alpha_src: BlendFactor = .one,
+        alpha_dst: BlendFactor = .zero,
+        alpha_op: BlendOp = .add,
+    };
+
+    pub const Options = struct {
+        topology: Topology,
+        front_face: FrontFace,
+        cull_mode: CullMode,
+
+        vertex_state: VertexState = .{},
+        blend_state: BlendState = .{},
+    };
+
+    const InnerType = backend.Pipeline;
+    inner: InnerType,
+
+    /// This function is safe to call on any thread.
+    pub inline fn info(self: *const Pipeline) *const Info {
+        return self.inner.info();
+    }
+};
+
+/// Must never outlive parent `Adapter`.
 pub const Texture = struct {
     pub const Error = error{} || GenericError;
     pub const Options = Info;
@@ -223,9 +338,7 @@ pub const Texture = struct {
     pub const Info = struct {
         usage: Usage,
         format: Format,
-        width: u32,
-        height: u32 = 0,
-        depth: u32 = 0,
+        size: Extent3D,
     };
 
     /// This function is safe to call on any thread.
@@ -257,25 +370,3 @@ pub const Sampler = struct {
         return self.inner.info();
     }
 };
-
-pub const WindowInfo = switch (builtin.platform) {
-    .win32 => struct {
-        hinstance: ?*anyopaque,
-        hwnd: ?*anyopaque,
-    },
-
-    .unix => union(enum) {
-        xlib: struct { display: ?*anyopaque, window: c_ulong },
-        xcb: struct { connection: ?*anyopaque, window: u32 },
-        wayland: struct { display: ?*anyopaque, surface: ?*anyopaque },
-    },
-
-    .android => struct {
-        window: ?*anyopaque,
-    },
-
-    else => @compileError("unknown os"),
-};
-
-pub const PowerMode = enum { integrated, discrete };
-pub const VsyncMode = enum { disabled, enabled, adaptive, mailbox };
