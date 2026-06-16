@@ -3,6 +3,8 @@ const vk = @import("vulkan");
 const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
+const log = std.log.scoped(.instance);
+
 const Self = @This();
 const Error = zora.Instance.Error;
 const GenericError = zora.GenericError;
@@ -12,7 +14,6 @@ const Delegate = utils.Delegate;
 const GetInstanceProcAddr = Delegate("vkGetInstanceProcAddr");
 const DestroyDebugUtilsMessenger = Delegate("vkDestroyDebugUtilsMessengerEXT");
 
-const log = std.log.scoped(.instance);
 const required_extensions = extensions ++ debug_extensions;
 
 const library_name: [:0]const u8 = switch (zora.builtin.target) {

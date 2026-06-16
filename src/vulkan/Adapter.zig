@@ -3,6 +3,8 @@ const vk = @import("vulkan");
 const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
+const log = std.log.scoped(.adapter);
+
 const Self = @This();
 const Instance = @import("Instance.zig");
 const Swapchain = @import("Swapchain.zig");
@@ -13,8 +15,6 @@ const GenericError = zora.GenericError;
 const Options = zora.Adapter.Options;
 const Info = zora.Adapter.Info;
 const Delegate = utils.Delegate;
-
-const log = std.log.scoped(.adapter);
 
 const extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -52,6 +52,8 @@ const PhysicalDevice = struct {
         const max_extensions: u32 = 1024;
         const bytes_in_mb = 1000 * 1000;
 
+        const vtable = &instance.vtable;
+
         // prepare buffers for queues
         var prop: vk.VkPhysicalDeviceProperties = undefined;
         var mem_prop: vk.VkPhysicalDeviceMemoryProperties = undefined;
@@ -66,14 +68,14 @@ const PhysicalDevice = struct {
         var queue_count = max_queues;
 
         // finally, query its queue family props...
-        instance.vtable.getPhysicalDeviceQueueFamilyProperties(
+        vtable.getPhysicalDeviceQueueFamilyProperties(
             handle,
             &queue_count,
             &queue_buffer,
         );
 
         // ... and its extensions
-        utils.call(instance.vtable.enumerateDeviceExtensionProperties, .{
+        utils.call(vtable.enumerateDeviceExtensionProperties, .{
             handle,
             null,
             &ext_count,
@@ -96,7 +98,7 @@ const PhysicalDevice = struct {
         var surface_queue_idx: ?u32 = null;
         var supports_surface: vk.VkBool32 = 0;
         for (0..queue_count) |j| {
-            utils.call(instance.vtable.getPhysicalDeviceSurfaceSupportKHR, .{
+            utils.call(vtable.getPhysicalDeviceSurfaceSupportKHR, .{
                 handle,
                 @as(u32, @intCast(j)),
                 surface,
@@ -180,9 +182,9 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
     errdefer instance.vtable.destroySurfaceKHR(instance.handle, surface, null);
 
     const phy_device = try findPhyDevice(instance, surface, options.power_mode);
-    const info_count = 1 + @as(u32, @intFromBool(
+    const info_count = @as(u32, @intFromBool(
         phy_device.surface_queue_idx != phy_device.graphics_queue_idx,
-    ));
+    )) + 1;
 
     const infos = [_]vk.VkDeviceQueueCreateInfo{
         .{
@@ -222,8 +224,8 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
     const destroy_device = try instance.getProcAddr("vkDestroyDevice");
     errdefer destroy_device(device, null);
 
-    // load vtable and retrieve queues for later use
     const vtable = try utils.loadVtable(Vtable, instance.vtable.getDeviceProcAddr, device);
+
     var graphics_queue: vk.VkQueue = null;
     var surface_queue: vk.VkQueue = null;
     vtable.getDeviceQueue(device, phy_device.graphics_queue_idx, 0, &graphics_queue);
@@ -286,6 +288,7 @@ fn createSurface(
     window_info: zora.WindowInfo,
 ) Error!vk.VkSurfaceKHR {
     log.debug("creating vulkan surface ...", .{});
+
     return try switch (zora.builtin.target) {
         .win32 => createSurfaceGeneric(
             "vkCreateWin32SurfaceKHR",
@@ -390,6 +393,7 @@ fn findPhyDevice(
         device_count += 1;
     }
 
+    // sort the devices using a scoring algorithm
     const slice = device_buffer[0..device_count];
     std.mem.sort(PhysicalDevice, slice, power_mode, PhysicalDevice.compareLessThan);
 
@@ -403,5 +407,6 @@ fn findPhyDevice(
         });
     }
 
+    // finally, return the best match
     return if (device_count != 0) device_buffer[0] else error.AdapterAcquisitionFailed;
 }

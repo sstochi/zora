@@ -3,6 +3,8 @@ const vk = @import("vulkan");
 const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
+const log = std.log.scoped(.shader);
+
 const Adapter = @import("Adapter.zig");
 
 const Self = @This();
@@ -48,16 +50,12 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
         };
 
         var handle: vk.VkShaderModule = undefined;
-        try utils.call(
-            adapter.vtable.createShaderModule,
-            .{
-                adapter.handle,
-                &create_info,
-                null,
-                &handle,
-            },
-            error.ShaderCreationFailed,
-        );
+        try utils.call(adapter.vtable.createShaderModule, .{
+            adapter.handle,
+            &create_info,
+            null,
+            &handle,
+        }, error.ShaderCreationFailed);
 
         stages[stage_count] = .{
             // prepare create info, useful later when (re)creating the pipeline
@@ -67,6 +65,7 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
                 .module = handle,
                 .pName = stage.entrypoint,
             },
+
             .handle = handle,
         };
         stage_count += 1;

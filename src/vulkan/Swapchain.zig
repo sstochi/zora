@@ -96,10 +96,7 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     };
 
     const same_queue = phy_device.graphics_queue_idx == phy_device.surface_queue_idx;
-    const queue_indicies: [2]u32 = .{
-        phy_device.graphics_queue_idx,
-        phy_device.surface_queue_idx,
-    };
+    const queue_indicies = [_]u32{ phy_device.graphics_queue_idx, phy_device.surface_queue_idx };
 
     const create_info = vk.VkSwapchainCreateInfoKHR{
         .sType = vk.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
