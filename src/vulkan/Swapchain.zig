@@ -248,5 +248,7 @@ fn presentModeCompareLessThan(
     a: vk.VkPresentModeKHR,
     b: vk.VkPresentModeKHR,
 ) bool {
+    // TODO: if user requests any kind of vsync (mailbox, adaptive, regular), we probably want to offer the
+    // next best match (ex. if user requested mailbox/adaptive, but only regular is available, choose it)
     return @intFromBool(b == target) < @intFromBool(a == target);
 }
