@@ -337,6 +337,10 @@ pub const PresentMode = enum(c_int) {
     _,
 };
 
+pub fn VulkanDelegate(comptime name: [:0]const u8) type {
+    return *const @TypeOf(@field(vk, name));
+}
+
 pub inline fn loadVtable(
     comptime V: type,
     get_proc_addr: anytype,
@@ -347,32 +351,22 @@ pub inline fn loadVtable(
 
     log.debug("loading vtable ({} total):", .{fields.len});
     inline for (fields) |field| {
-        const name: [:0]const u8 = "vk" ++ .{
+        const name: [:0]const u8 = comptime "vk" ++ .{
             std.ascii.toUpper(field.name[0]),
         } ++ field.name[1..];
 
         log.debug(" delegate \"{s}\" ...", .{name});
-        @field(table, field.name) = try getProcAddr(
-            @TypeOf(@field(table, field.name)),
-            name,
-            get_proc_addr,
-            arg,
-        );
+        @field(table, field.name) = try getProcAddr(name, get_proc_addr, arg);
     }
 
     return table;
 }
 
 pub inline fn getProcAddr(
-    comptime F: type,
-    name: [:0]const u8,
+    comptime name: [:0]const u8,
     get_proc_addr: anytype,
     arg: anytype,
-) GenericError!F {
-    const type_info = @typeInfo(F);
-    if (type_info != .pointer) @compileError("not a function pointer");
-    if (@typeInfo(type_info.pointer.child) != .@"fn") @compileError("not a function pointer");
-
+) GenericError!VulkanDelegate(name) {
     return @ptrCast(
         get_proc_addr(
             arg,

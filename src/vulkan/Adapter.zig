@@ -3,12 +3,6 @@ const vk = @import("vulkan");
 const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
-const log = std.log.scoped(.adapter);
-
-const extensions: []const [*:0]const u8 = &.{
-    vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-};
-
 const Self = @This();
 const Instance = @import("Instance.zig");
 const Swapchain = @import("Swapchain.zig");
@@ -18,6 +12,13 @@ const Error = zora.Adapter.Error;
 const GenericError = zora.GenericError;
 const Options = zora.Adapter.Options;
 const Info = zora.Adapter.Info;
+const VulkanDelegate = utils.VulkanDelegate;
+
+const log = std.log.scoped(.adapter);
+
+const extensions: []const [*:0]const u8 = &.{
+    vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+};
 
 const PhysicalDevice = struct {
     name: [256]u8,
@@ -218,10 +219,7 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
         &device,
     }, error.AdapterAcquisitionFailed);
 
-    const destroy_device = try instance.getProcAddr(
-        *const @TypeOf(vk.vkDestroyDevice),
-        "vkDestroyDevice",
-    );
+    const destroy_device = try instance.getProcAddr("vkDestroyDevice");
     errdefer destroy_device(device, null);
 
     // load vtable and retrieve queues for later use
@@ -274,11 +272,9 @@ pub fn info(self: *const Self) *const Info {
 
 pub fn getProcAddr(
     self: *const Self,
-    comptime F: type,
-    name: [:0]const u8,
-) GenericError!F {
+    comptime name: [:0]const u8,
+) GenericError!VulkanDelegate(name) {
     return try utils.getProcAddr(
-        F,
         name,
         self.instance.vtable.getDeviceProcAddr,
         self.handle,

@@ -3,6 +3,12 @@ const vk = @import("vulkan");
 const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
+const Self = @This();
+const Error = zora.Instance.Error;
+const GenericError = zora.GenericError;
+const Options = zora.Instance.Options;
+const VulkanDelegate = utils.VulkanDelegate;
+
 const log = std.log.scoped(.instance);
 const required_extensions = extensions ++ debug_extensions;
 const max_optional_extensions = 4;
@@ -44,11 +50,6 @@ const validation_layers: []const [*:0]const u8 = switch (zora.builtin.debug) {
     true => &.{"VK_LAYER_KHRONOS_validation"},
     false => &.{},
 };
-
-const Self = @This();
-const Error = zora.Instance.Error;
-const GenericError = zora.GenericError;
-const Options = zora.Instance.Options;
 
 const VulkanLoader = switch (zora.builtin.target) {
     // zig 0.16.0 removed windows from std.DynLib... Thanks, Andrew!
@@ -165,14 +166,12 @@ pub fn create(_: Options) Error!Self {
     ) orelse return error.LoaderFailed;
 
     const enum_extensions = try utils.getProcAddr(
-        *const @TypeOf(vk.vkEnumerateInstanceExtensionProperties),
         "vkEnumerateInstanceExtensionProperties",
         get_proc_addr,
         null,
     );
 
     const create_instance = try utils.getProcAddr(
-        *const @TypeOf(vk.vkCreateInstance),
         "vkCreateInstance",
         get_proc_addr,
         null,
@@ -251,7 +250,6 @@ pub fn create(_: Options) Error!Self {
 
     // load destroy and setup defer
     const destroy_instance = try utils.getProcAddr(
-        *const @TypeOf(vk.vkDestroyInstance),
         "vkDestroyInstance",
         get_proc_addr,
         handle,
@@ -294,11 +292,9 @@ pub fn destroy(self: *Self) void {
 
 pub fn getProcAddr(
     self: *const Self,
-    comptime F: type,
-    name: [:0]const u8,
-) GenericError!F {
+    comptime name: [:0]const u8,
+) GenericError!VulkanDelegate(name) {
     return try utils.getProcAddr(
-        F,
         name,
         self.get_proc_addr,
         self.handle,
@@ -312,14 +308,12 @@ fn setupDiagnosticMessenger(
     handle: *vk.VkDebugUtilsMessengerEXT,
 ) Error!*const @TypeOf(vk.vkDestroyDebugUtilsMessengerEXT) {
     const create_messenger = try utils.getProcAddr(
-        *const @TypeOf(vk.vkCreateDebugUtilsMessengerEXT),
         "vkCreateDebugUtilsMessengerEXT",
         get_proc_addr,
         instance,
     );
 
     const destroy_messenger = try utils.getProcAddr(
-        *const @TypeOf(vk.vkDestroyDebugUtilsMessengerEXT),
         "vkDestroyDebugUtilsMessengerEXT",
         get_proc_addr,
         instance,
