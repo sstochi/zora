@@ -359,16 +359,26 @@ pub inline fn loadVtable(
     return table;
 }
 
-pub inline fn except(
-    result: vk.VkResult,
-    default_error: anytype,
-) (@TypeOf(default_error) || zora.GenericError)!void {
-    return switch (result) {
+pub inline fn call(
+    function: anytype,
+    args: anytype,
+    @"error": anytype,
+) (@TypeOf(@"error") || zora.GenericError)!void {
+    const F = @TypeOf(function);
+    const type_info = switch (@typeInfo(F)) {
+        .pointer => |ptr| @typeInfo(ptr.child),
+        else => |ty| ty,
+    };
+    if (type_info != .@"fn") @compileError("not a function");
+    if (type_info.@"fn".return_type != vk.VkResult) @compileError("result is not VkResult");
+
+    return switch (@call(.auto, function, args)) {
         vk.VK_ERROR_OUT_OF_HOST_MEMORY,
         vk.VK_ERROR_OUT_OF_DEVICE_MEMORY,
         => error.OutOfMemory,
 
-        vk.VK_SUCCESS, vk.VK_INCOMPLETE => {},
-        else => default_error,
+        vk.VK_INCOMPLETE => log.warn("{s} returned VK_INCOMPLETE!", .{@typeName(F)}),
+        vk.VK_SUCCESS => {},
+        else => @"error",
     };
 }

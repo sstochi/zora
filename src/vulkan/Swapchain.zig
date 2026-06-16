@@ -23,6 +23,9 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     const max_formats: u32 = 128;
     const max_modes: u32 = 8;
 
+    const instance = adapter.instance;
+    const phy_device = &adapter.phy_device;
+
     var capabilities: vk.VkSurfaceCapabilitiesKHR = undefined;
     var format_buffer: [max_formats]vk.VkSurfaceFormatKHR = undefined;
     var mode_buffer: [max_modes]vk.VkPresentModeKHR = undefined;
@@ -32,27 +35,27 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     log.debug("querying supported properties ...", .{});
 
     // query capabilities
-    try utils.except(adapter.instance.vtable.getPhysicalDeviceSurfaceCapabilitiesKHR(
-        adapter.phy_device.handle,
+    try utils.call(instance.vtable.getPhysicalDeviceSurfaceCapabilitiesKHR, .{
+        phy_device.handle,
         adapter.surface,
         &capabilities,
-    ), error.SwapchainCreationFailed);
+    }, error.SwapchainCreationFailed);
 
     // ... surface formats...
-    try utils.except(adapter.instance.vtable.getPhysicalDeviceSurfacePresentModesKHR(
-        adapter.phy_device.handle,
+    try utils.call(instance.vtable.getPhysicalDeviceSurfacePresentModesKHR, .{
+        phy_device.handle,
         adapter.surface,
         &mode_count,
         &mode_buffer,
-    ), error.SwapchainCreationFailed);
+    }, error.SwapchainCreationFailed);
 
     // ... and present modes
-    try utils.except(adapter.instance.vtable.getPhysicalDeviceSurfaceFormatsKHR(
-        adapter.phy_device.handle,
+    try utils.call(instance.vtable.getPhysicalDeviceSurfaceFormatsKHR, .{
+        phy_device.handle,
         adapter.surface,
         &format_count,
         &format_buffer,
-    ), error.SwapchainCreationFailed);
+    }, error.SwapchainCreationFailed);
 
     // decide on the target present mode
     const target_mode: vk.VkPresentModeKHR = switch (options.vsync_mode) {
@@ -63,8 +66,19 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     };
 
     // sort based on favourability
-    std.mem.sort(vk.VkPresentModeKHR, mode_buffer[0..mode_count], target_mode, presentModeCompareLessThan);
-    std.mem.sort(vk.VkSurfaceFormatKHR, format_buffer[0..format_count], {}, formatCompareLessThan);
+    std.mem.sort(
+        vk.VkPresentModeKHR,
+        mode_buffer[0..mode_count],
+        target_mode,
+        presentModeCompareLessThan,
+    );
+
+    std.mem.sort(
+        vk.VkSurfaceFormatKHR,
+        format_buffer[0..format_count],
+        {},
+        formatCompareLessThan,
+    );
 
     log.info("surface formats:", .{});
     for (0..format_count) |i| {
@@ -81,10 +95,10 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
         else => capabilities.maxImageCount,
     };
 
-    const same_queue = adapter.phy_device.graphics_queue_idx == adapter.phy_device.surface_queue_idx;
+    const same_queue = phy_device.graphics_queue_idx == phy_device.surface_queue_idx;
     const queue_indicies: [2]u32 = .{
-        adapter.phy_device.graphics_queue_idx,
-        adapter.phy_device.surface_queue_idx,
+        phy_device.graphics_queue_idx,
+        phy_device.surface_queue_idx,
     };
 
     const create_info = vk.VkSwapchainCreateInfoKHR{
@@ -114,12 +128,12 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     // create swapchain khr
     log.debug("creating vulkan swapchain ...", .{});
     var handle: vk.VkSwapchainKHR = undefined;
-    try utils.except(adapter.vtable.createSwapchainKHR(
+    try utils.call(adapter.vtable.createSwapchainKHR, .{
         adapter.handle,
         &create_info,
         null,
         &handle,
-    ), error.SwapchainCreationFailed);
+    }, error.SwapchainCreationFailed);
     errdefer adapter.vtable.destroySwapchainKHR(adapter.handle, handle, null);
 
     var acquire_image_sem: vk.VkSemaphore = undefined;
@@ -129,19 +143,19 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
         .sType = vk.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
     };
 
-    try utils.except(adapter.vtable.createSemaphore(
+    try utils.call(adapter.vtable.createSemaphore, .{
         adapter.handle,
         &sem_create_info,
         null,
         &acquire_image_sem,
-    ), error.SwapchainCreationFailed);
+    }, error.SwapchainCreationFailed);
 
-    try utils.except(adapter.vtable.createSemaphore(
+    try utils.call(adapter.vtable.createSemaphore, .{
         adapter.handle,
         &sem_create_info,
         null,
         &present_sem,
-    ), error.SwapchainCreationFailed);
+    }, error.SwapchainCreationFailed);
 
     return .{
         .chain_info = .{
@@ -178,14 +192,14 @@ pub fn present(self: *Self) void {
     // it's simply here to submite changes to wayland :)
     var idx: u32 = undefined;
 
-    utils.except(self.adapter.vtable.acquireNextImageKHR(
+    utils.call(self.adapter.vtable.acquireNextImageKHR, .{
         self.adapter.handle,
         self.handle,
         std.math.maxInt(u64),
         self.acquire_image_sem,
         null,
         &idx,
-    ), error.Failed) catch @panic(":(");
+    }, error.Failed) catch @panic(":(");
 
     var handles: [1]vk.VkSwapchainKHR = .{self.handle};
     var semaphores: [1]vk.VkSemaphore = .{self.acquire_image_sem};

@@ -48,8 +48,14 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
         };
 
         var handle: vk.VkShaderModule = undefined;
-        try utils.except(
-            adapter.vtable.createShaderModule(adapter.handle, &create_info, null, &handle),
+        try utils.call(
+            adapter.vtable.createShaderModule,
+            .{
+                adapter.handle,
+                &create_info,
+                null,
+                &handle,
+            },
             error.ShaderCreationFailed,
         );
 
