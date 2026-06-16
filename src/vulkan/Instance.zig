@@ -135,7 +135,7 @@ destroy_messenger: DestroyDebugUtilsMessenger,
 loader: Loader,
 
 pub fn create(_: Options) Error!Self {
-    const max_properties = 512;
+    const max_properties = 1024;
 
     // load vulkan lib
     log.info("loading vulkan lib ...", .{});
