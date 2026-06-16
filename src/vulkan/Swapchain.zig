@@ -21,7 +21,7 @@ present_sem: vk.VkSemaphore,
 
 pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     const max_formats: u32 = 128;
-    const max_modes: u32 = 8;
+    const max_modes: u32 = 32;
 
     const instance = adapter.instance;
     const phy_device = &adapter.phy_device;
