@@ -224,13 +224,8 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
     );
     errdefer destroy_device(device, null);
 
-    const vtable = utils.loadVtable(
-        Vtable,
-        instance.vtable.getDeviceProcAddr,
-        device,
-    ) orelse return error.LoaderFailed;
-
-    // retrieve graphics and surface queues for later use
+    // load vtable and retrieve queues for later use
+    const vtable = try utils.loadVtable(Vtable, instance.vtable.getDeviceProcAddr, device);
     var graphics_queue: vk.VkQueue = null;
     var surface_queue: vk.VkQueue = null;
     vtable.getDeviceQueue(device, phy_device.graphics_queue_idx, 0, &graphics_queue);
@@ -280,10 +275,14 @@ pub fn info(self: *const Self) *const Info {
 pub fn getProcAddr(
     self: *const Self,
     comptime F: type,
-    comptime name: [:0]const u8,
+    name: [:0]const u8,
 ) GenericError!F {
-    return @ptrCast(self.instance.vtable.getDeviceProcAddr(self.handle, name.ptr) orelse
-        return error.LoaderFailed);
+    return try utils.getProcAddr(
+        F,
+        name,
+        self.instance.vtable.getDeviceProcAddr,
+        self.handle,
+    );
 }
 
 fn createSurface(

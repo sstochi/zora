@@ -158,19 +158,24 @@ pub fn create(_: Options) Error!Self {
     errdefer loader.close();
 
     log.debug("loading essential delegates ...", .{});
+
     const get_proc_addr = loader.lookup(
         *const @TypeOf(vk.vkGetInstanceProcAddr),
         "vkGetInstanceProcAddr",
     ) orelse return error.LoaderFailed;
 
-    const enum_extensions: *const @TypeOf(vk.vkEnumerateInstanceExtensionProperties) = @ptrCast(
-        get_proc_addr(null, "vkEnumerateInstanceExtensionProperties") orelse
-            return error.LoaderFailed,
+    const enum_extensions = try utils.getProcAddr(
+        *const @TypeOf(vk.vkEnumerateInstanceExtensionProperties),
+        "vkEnumerateInstanceExtensionProperties",
+        get_proc_addr,
+        null,
     );
 
-    const create_instance: *const @TypeOf(vk.vkCreateInstance) = @ptrCast(
-        get_proc_addr(null, "vkCreateInstance") orelse
-            return error.LoaderFailed,
+    const create_instance = try utils.getProcAddr(
+        *const @TypeOf(vk.vkCreateInstance),
+        "vkCreateInstance",
+        get_proc_addr,
+        null,
     );
 
     // query all extensions
@@ -206,10 +211,22 @@ pub fn create(_: Options) Error!Self {
         }
     }
 
+    // configure create info for diagnostic logger
     const messenger_create_info = vk.VkDebugUtilsMessengerCreateInfoEXT{
         .sType = vk.VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-        .messageSeverity = vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-        .messageType = vk.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | vk.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | vk.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+
+        .messageSeverity = vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+            vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+            vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+            vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+
+        .messageType = vk.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+            vk.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT |
+            switch (zora.builtin.debug) {
+                true => vk.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT,
+                false => 0, // we don't want verbose logs when in ReleaseSafe...
+            },
+
         .pfnUserCallback = diagnosticCallback,
     };
 
@@ -233,31 +250,26 @@ pub fn create(_: Options) Error!Self {
     }, error.InstanceCreationFailed);
 
     // load destroy and setup defer
-    const destroy_instance: *const @TypeOf(vk.vkDestroyInstance) = @ptrCast(
-        get_proc_addr(handle, "vkDestroyInstance") orelse
-            return error.LoaderFailed,
+    const destroy_instance = try utils.getProcAddr(
+        *const @TypeOf(vk.vkDestroyInstance),
+        "vkDestroyInstance",
+        get_proc_addr,
+        handle,
     );
     errdefer destroy_instance(handle, null);
 
     // try to setup a diagnostic messenger
     var messenger_handle: vk.VkDebugUtilsMessengerEXT = null;
-    const destroy_messenger = switch (zora.builtin.debug) {
-        true => try setupDiagnosticMessenger(
-            handle,
-            get_proc_addr,
-            &messenger_create_info,
-            &messenger_handle,
-        ),
-        false => null,
-    };
+    const destroy_messenger = if (zora.builtin.debug) try setupDiagnosticMessenger(
+        handle,
+        get_proc_addr,
+        &messenger_create_info,
+        &messenger_handle,
+    ) else null;
 
     return .{
         // load virtual functions
-        .vtable = utils.loadVtable(
-            Vtable,
-            get_proc_addr,
-            handle,
-        ) orelse return error.LoaderFailed,
+        .vtable = try utils.loadVtable(Vtable, get_proc_addr, handle),
 
         .handle = handle,
         .messenger_handle = messenger_handle,
@@ -270,9 +282,11 @@ pub fn create(_: Options) Error!Self {
 pub fn destroy(self: *Self) void {
     log.debug("destroying vulkan instance ...", .{});
 
-    if (zora.builtin.debug) {
-        self.destroy_messenger(self.handle, self.messenger_handle, null);
-    }
+    if (zora.builtin.debug) self.destroy_messenger(
+        self.handle,
+        self.messenger_handle,
+        null,
+    );
 
     self.vtable.destroyInstance(self.handle, null);
     self.loader.close();
@@ -281,10 +295,14 @@ pub fn destroy(self: *Self) void {
 pub fn getProcAddr(
     self: *const Self,
     comptime F: type,
-    comptime name: [:0]const u8,
+    name: [:0]const u8,
 ) GenericError!F {
-    return @ptrCast(self.get_proc_addr(self.handle, name.ptr) orelse
-        return error.LoaderFailed);
+    return try utils.getProcAddr(
+        F,
+        name,
+        self.get_proc_addr,
+        self.handle,
+    );
 }
 
 fn setupDiagnosticMessenger(
@@ -293,14 +311,18 @@ fn setupDiagnosticMessenger(
     create_info: *const vk.VkDebugUtilsMessengerCreateInfoEXT,
     handle: *vk.VkDebugUtilsMessengerEXT,
 ) Error!*const @TypeOf(vk.vkDestroyDebugUtilsMessengerEXT) {
-    const create_messenger: *const @TypeOf(vk.vkCreateDebugUtilsMessengerEXT) = @ptrCast(
-        get_proc_addr(instance, "vkCreateDebugUtilsMessengerEXT") orelse
-            return error.LoaderFailed,
+    const create_messenger = try utils.getProcAddr(
+        *const @TypeOf(vk.vkCreateDebugUtilsMessengerEXT),
+        "vkCreateDebugUtilsMessengerEXT",
+        get_proc_addr,
+        instance,
     );
 
-    const destroy_messenger: *const @TypeOf(vk.vkDestroyDebugUtilsMessengerEXT) = @ptrCast(
-        get_proc_addr(instance, "vkDestroyDebugUtilsMessengerEXT") orelse
-            return error.LoaderFailed,
+    const destroy_messenger = try utils.getProcAddr(
+        *const @TypeOf(vk.vkDestroyDebugUtilsMessengerEXT),
+        "vkDestroyDebugUtilsMessengerEXT",
+        get_proc_addr,
+        instance,
     );
 
     try utils.call(create_messenger, .{
@@ -308,7 +330,7 @@ fn setupDiagnosticMessenger(
         create_info,
         null,
         handle,
-    }, error.LoaderFailed);
+    }, error.InstanceCreationFailed);
 
     return destroy_messenger;
 }
@@ -325,12 +347,16 @@ fn diagnosticCallback(
     switch (severity) {
         vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
         => scoped.debug("{s}", .{std.mem.sliceTo(data.pMessage, 0)}),
+
         vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT,
         => scoped.info("{s}", .{std.mem.sliceTo(data.pMessage, 0)}),
+
         vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT,
         => scoped.warn("{s}", .{std.mem.sliceTo(data.pMessage, 0)}),
+
         vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
         => scoped.err("{s}", .{std.mem.sliceTo(data.pMessage, 0)}),
+
         else => unreachable,
     }
 

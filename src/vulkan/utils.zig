@@ -2,6 +2,7 @@ const std = @import("std");
 const vk = @import("vulkan");
 const builtin = @import("builtin");
 const zora = @import("../root.zig");
+const GenericError = zora.GenericError;
 
 const log = std.log.scoped(.utils);
 
@@ -340,7 +341,7 @@ pub inline fn loadVtable(
     comptime V: type,
     get_proc_addr: anytype,
     arg: anytype,
-) ?V {
+) GenericError!V {
     const fields = @typeInfo(V).@"struct".fields;
     var table: V = undefined;
 
@@ -351,34 +352,57 @@ pub inline fn loadVtable(
         } ++ field.name[1..];
 
         log.debug(" delegate \"{s}\" ...", .{name});
-        @field(table, field.name) = @ptrCast(
-            get_proc_addr(arg, name.ptr) orelse return null,
+        @field(table, field.name) = try getProcAddr(
+            @TypeOf(@field(table, field.name)),
+            name,
+            get_proc_addr,
+            arg,
         );
     }
 
     return table;
 }
 
+pub inline fn getProcAddr(
+    comptime F: type,
+    name: [:0]const u8,
+    get_proc_addr: anytype,
+    arg: anytype,
+) GenericError!F {
+    const type_info = @typeInfo(F);
+    if (type_info != .pointer) @compileError("not a function pointer");
+    if (@typeInfo(type_info.pointer.child) != .@"fn") @compileError("not a function pointer");
+
+    return @ptrCast(
+        get_proc_addr(
+            arg,
+            name.ptr,
+        ) orelse return error.LoaderFailed,
+    );
+}
+
 pub inline fn call(
     function: anytype,
     args: anytype,
     @"error": anytype,
-) (@TypeOf(@"error") || zora.GenericError)!void {
+) (@TypeOf(@"error") || GenericError)!void {
     const F = @TypeOf(function);
-    const type_info = switch (@typeInfo(F)) {
-        .pointer => |ptr| @typeInfo(ptr.child),
-        else => |ty| ty,
-    };
-    if (type_info != .@"fn") @compileError("not a function");
-    if (type_info.@"fn".return_type != vk.VkResult) @compileError("result is not VkResult");
+    const type_info = @typeInfo(F);
+    if (type_info != .pointer) @compileError("not a function pointer");
+    if (@typeInfo(type_info.pointer.child) != .@"fn") @compileError("not a function pointer");
 
     return switch (@call(.auto, function, args)) {
+        vk.VK_SUCCESS => {},
+
+        vk.VK_INCOMPLETE => log.warn(
+            "{s}: VK_INCOMPLETE!",
+            .{@typeName(F)},
+        ),
+
         vk.VK_ERROR_OUT_OF_HOST_MEMORY,
         vk.VK_ERROR_OUT_OF_DEVICE_MEMORY,
         => error.OutOfMemory,
 
-        vk.VK_INCOMPLETE => log.warn("{s} returned VK_INCOMPLETE!", .{@typeName(F)}),
-        vk.VK_SUCCESS => {},
         else => @"error",
     };
 }
