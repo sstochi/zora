@@ -14,7 +14,6 @@ const DestroyDebugUtilsMessenger = Delegate("vkDestroyDebugUtilsMessengerEXT");
 
 const log = std.log.scoped(.instance);
 const required_extensions = extensions ++ debug_extensions;
-const max_optional_extensions = 4;
 
 const library_name: [:0]const u8 = switch (zora.builtin.target) {
     .win32 => "vulkan-1.dll",
@@ -54,57 +53,6 @@ const validation_layers: []const [*:0]const u8 = switch (zora.builtin.debug) {
     false => &.{},
 };
 
-const VulkanLoader = switch (zora.builtin.target) {
-    // zig 0.16.0 removed windows from std.DynLib... Thanks, Andrew!
-    .win32 => struct {
-        const BOOL = c_int;
-        const HMODULE = ?*anyopaque;
-        const FARPROC = ?*const fn () callconv(.c) c_int;
-
-        extern fn LoadLibraryA(lpLibFileName: [*:0]const u8) callconv(.c) HMODULE;
-        extern fn GetProcAddress(hModule: HMODULE, lpProcName: [*:0]const u8) callconv(.c) FARPROC;
-        extern fn FreeLibrary(hLibModule: HMODULE) callconv(.c) BOOL;
-
-        hmodule: HMODULE,
-
-        pub fn open() Error!VulkanLoader {
-            return .{
-                .hmodule = LoadLibraryA(
-                    library_name.ptr,
-                ) orelse return error.LoaderFailed,
-            };
-        }
-
-        pub fn close(self: *VulkanLoader) void {
-            _ = FreeLibrary(self.hmodule);
-        }
-
-        pub fn lookup(self: *VulkanLoader, comptime T: type, name: [:0]const u8) ?T {
-            return @ptrCast(GetProcAddress(self.hmodule, name.ptr));
-        }
-    },
-
-    else => struct {
-        handle: std.DynLib,
-
-        pub fn open() Error!VulkanLoader {
-            return .{
-                .handle = std.DynLib.open(
-                    library_name,
-                ) catch return error.LoaderFailed,
-            };
-        }
-
-        pub fn close(self: *VulkanLoader) void {
-            self.handle.close();
-        }
-
-        pub fn lookup(self: *VulkanLoader, comptime T: type, name: [:0]const u8) ?T {
-            return @ptrCast(self.handle.lookup(T, name));
-        }
-    },
-};
-
 const Vtable = struct {
     getDeviceProcAddr: Delegate("vkGetDeviceProcAddr"),
 
@@ -128,37 +76,70 @@ const Vtable = struct {
     queuePresentKHR: Delegate("vkQueuePresentKHR"),
 };
 
+const Loader = switch (zora.builtin.target) {
+    // zig 0.16.0 removed windows from std.DynLib... Thanks, Andrew!
+    .win32 => struct {
+        const BOOL = c_int;
+        const HMODULE = ?*anyopaque;
+        const FARPROC = ?*const fn () callconv(.c) c_int;
+
+        extern fn LoadLibraryA(lpLibFileName: [*:0]const u8) callconv(.c) HMODULE;
+        extern fn GetProcAddress(hModule: HMODULE, lpProcName: [*:0]const u8) callconv(.c) FARPROC;
+        extern fn FreeLibrary(hLibModule: HMODULE) callconv(.c) BOOL;
+
+        hmodule: HMODULE,
+
+        pub fn open() GenericError!Loader {
+            return .{
+                .hmodule = LoadLibraryA(
+                    library_name.ptr,
+                ) orelse return error.LoaderFailed,
+            };
+        }
+
+        pub fn close(self: *Loader) void {
+            _ = FreeLibrary(self.hmodule);
+        }
+
+        pub fn lookup(self: *Loader, comptime T: type, name: [:0]const u8) ?T {
+            return @ptrCast(GetProcAddress(self.hmodule, name.ptr));
+        }
+    },
+
+    else => struct {
+        handle: std.DynLib,
+
+        pub fn open() GenericError!Loader {
+            return .{
+                .handle = std.DynLib.open(
+                    library_name,
+                ) catch return error.LoaderFailed,
+            };
+        }
+
+        pub fn close(self: *Loader) void {
+            self.handle.close();
+        }
+
+        pub fn lookup(self: *Loader, comptime T: type, name: [:0]const u8) ?T {
+            return @ptrCast(self.handle.lookup(T, name));
+        }
+    },
+};
+
 vtable: Vtable,
 handle: vk.VkInstance,
 messenger_handle: vk.VkDebugUtilsMessengerEXT,
 get_proc_addr: GetInstanceProcAddr,
 destroy_messenger: DestroyDebugUtilsMessenger,
-loader: VulkanLoader,
+loader: Loader,
 
 pub fn create(_: Options) Error!Self {
-    const max_properties = 128;
-
-    const version = vk.VK_MAKE_VERSION(
-        zora.builtin.version.major,
-        zora.builtin.version.minor,
-        zora.builtin.version.patch,
-    );
-
-    const app_info = vk.VkApplicationInfo{
-        .sType = vk.VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pApplicationName = "zora Application",
-        .applicationVersion = version,
-        .pEngineName = "zora",
-        .engineVersion = version,
-        .apiVersion = vk.VK_API_VERSION_1_0,
-    };
-
-    var query_buffer: [max_properties]vk.VkExtensionProperties = undefined;
-    var query_count: u32 = max_properties;
+    const max_properties = 512;
 
     // load vulkan lib
     log.info("loading vulkan lib ...", .{});
-    var loader = try VulkanLoader.open();
+    var loader = try Loader.open();
     errdefer loader.close();
 
     log.debug("loading essential delegates ...", .{});
@@ -180,6 +161,9 @@ pub fn create(_: Options) Error!Self {
         null,
     );
 
+    var query_buffer: [max_properties]vk.VkExtensionProperties = undefined;
+    var query_count: u32 = max_properties;
+
     // query all extensions
     try utils.call(enum_extensions, .{
         null,
@@ -188,7 +172,7 @@ pub fn create(_: Options) Error!Self {
     }, error.InstanceCreationFailed);
 
     // create initial extension list
-    var ext_buffer: [max_optional_extensions + required_extensions.len][*:0]const u8 = undefined;
+    var ext_buffer: [optional_extensions.len + required_extensions.len][*:0]const u8 = undefined;
     var ext_count = required_extensions.len;
     @memcpy(ext_buffer[0..required_extensions.len], required_extensions);
 
@@ -212,6 +196,21 @@ pub fn create(_: Options) Error!Self {
             }
         }
     }
+
+    const version = vk.VK_MAKE_VERSION(
+        zora.builtin.version.major,
+        zora.builtin.version.minor,
+        zora.builtin.version.patch,
+    );
+
+    const app_info = vk.VkApplicationInfo{
+        .sType = vk.VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .pApplicationName = "zora Application",
+        .applicationVersion = version,
+        .pEngineName = "zora",
+        .engineVersion = version,
+        .apiVersion = vk.VK_API_VERSION_1_0,
+    };
 
     // configure create info for diagnostic logger
     const messenger_create_info = vk.VkDebugUtilsMessengerCreateInfoEXT{

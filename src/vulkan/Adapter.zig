@@ -20,6 +20,22 @@ const extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 };
 
+const Vtable = struct {
+    getDeviceQueue: Delegate("vkGetDeviceQueue"),
+
+    createShaderModule: Delegate("vkCreateShaderModule"),
+    createSemaphore: Delegate("vkCreateSemaphore"),
+    createSwapchainKHR: Delegate("vkCreateSwapchainKHR"),
+
+    destroyShaderModule: Delegate("vkDestroyShaderModule"),
+    destroySemaphore: Delegate("vkDestroySemaphore"),
+    destroySwapchainKHR: Delegate("vkDestroySwapchainKHR"),
+
+    deviceWaitIdle: Delegate("vkDeviceWaitIdle"),
+    acquireNextImageKHR: Delegate("vkAcquireNextImageKHR"),
+    queuePresentKHR: Delegate("vkQueuePresentKHR"),
+};
+
 const PhysicalDevice = struct {
     name: [256]u8,
     info: Info,
@@ -32,8 +48,8 @@ const PhysicalDevice = struct {
         handle: vk.VkPhysicalDevice,
         surface: vk.VkSurfaceKHR,
     ) ?PhysicalDevice {
-        const max_queues: u32 = 32;
-        const max_extensions: u32 = 256;
+        const max_queues: u32 = 128;
+        const max_extensions: u32 = 1024;
         const bytes_in_mb = 1000 * 1000;
 
         // prepare buffers for queues
@@ -146,22 +162,6 @@ const PhysicalDevice = struct {
     ) bool {
         return b.score(power_mode) < a.score(power_mode);
     }
-};
-
-const Vtable = struct {
-    getDeviceQueue: Delegate("vkGetDeviceQueue"),
-
-    createShaderModule: Delegate("vkCreateShaderModule"),
-    createSemaphore: Delegate("vkCreateSemaphore"),
-    createSwapchainKHR: Delegate("vkCreateSwapchainKHR"),
-
-    destroyShaderModule: Delegate("vkDestroyShaderModule"),
-    destroySemaphore: Delegate("vkDestroySemaphore"),
-    destroySwapchainKHR: Delegate("vkDestroySwapchainKHR"),
-
-    deviceWaitIdle: Delegate("vkDeviceWaitIdle"),
-    acquireNextImageKHR: Delegate("vkAcquireNextImageKHR"),
-    queuePresentKHR: Delegate("vkQueuePresentKHR"),
 };
 
 vtable: Vtable,
@@ -365,7 +365,7 @@ fn findPhyDevice(
     surface: vk.VkSurfaceKHR,
     power_mode: zora.PowerMode,
 ) zora.Adapter.Error!PhysicalDevice {
-    const max_devices: u32 = 32;
+    const max_devices: u32 = 128;
 
     var device_buffer: [max_devices]PhysicalDevice = undefined;
     var handle_buffer: [max_devices]vk.VkPhysicalDevice = undefined;

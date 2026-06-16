@@ -333,7 +333,7 @@ pub const PresentMode = enum(c_int) {
     immediate_khr = vk.VK_PRESENT_MODE_IMMEDIATE_KHR,
     mailbox_khr = vk.VK_PRESENT_MODE_MAILBOX_KHR,
     fifo_khr = vk.VK_PRESENT_MODE_FIFO_KHR,
-    filo_relaxed_khr = vk.VK_PRESENT_MODE_FIFO_RELAXED_KHR,
+    fifo_relaxed_khr = vk.VK_PRESENT_MODE_FIFO_RELAXED_KHR,
     _,
 };
 
