@@ -12,7 +12,7 @@ const Error = zora.Adapter.Error;
 const GenericError = zora.GenericError;
 const Options = zora.Adapter.Options;
 const Info = zora.Adapter.Info;
-const VulkanDelegate = utils.VulkanDelegate;
+const Delegate = utils.Delegate;
 
 const log = std.log.scoped(.adapter);
 
@@ -149,19 +149,19 @@ const PhysicalDevice = struct {
 };
 
 const Vtable = struct {
-    getDeviceQueue: *const @TypeOf(vk.vkGetDeviceQueue),
+    getDeviceQueue: Delegate("vkGetDeviceQueue"),
 
-    createShaderModule: *const @TypeOf(vk.vkCreateShaderModule),
-    createSemaphore: *const @TypeOf(vk.vkCreateSemaphore),
-    createSwapchainKHR: *const @TypeOf(vk.vkCreateSwapchainKHR),
+    createShaderModule: Delegate("vkCreateShaderModule"),
+    createSemaphore: Delegate("vkCreateSemaphore"),
+    createSwapchainKHR: Delegate("vkCreateSwapchainKHR"),
 
-    destroyShaderModule: *const @TypeOf(vk.vkDestroyShaderModule),
-    destroySemaphore: *const @TypeOf(vk.vkDestroySemaphore),
-    destroySwapchainKHR: *const @TypeOf(vk.vkDestroySwapchainKHR),
+    destroyShaderModule: Delegate("vkDestroyShaderModule"),
+    destroySemaphore: Delegate("vkDestroySemaphore"),
+    destroySwapchainKHR: Delegate("vkDestroySwapchainKHR"),
 
-    deviceWaitIdle: *const @TypeOf(vk.vkDeviceWaitIdle),
-    acquireNextImageKHR: *const @TypeOf(vk.vkAcquireNextImageKHR),
-    queuePresentKHR: *const @TypeOf(vk.vkQueuePresentKHR),
+    deviceWaitIdle: Delegate("vkDeviceWaitIdle"),
+    acquireNextImageKHR: Delegate("vkAcquireNextImageKHR"),
+    queuePresentKHR: Delegate("vkQueuePresentKHR"),
 };
 
 vtable: Vtable,
@@ -273,7 +273,7 @@ pub fn info(self: *const Self) *const Info {
 pub fn getProcAddr(
     self: *const Self,
     comptime name: [:0]const u8,
-) GenericError!VulkanDelegate(name) {
+) GenericError!Delegate(name) {
     return try utils.getProcAddr(
         name,
         self.instance.vtable.getDeviceProcAddr,
@@ -343,33 +343,19 @@ fn createSurface(
 }
 
 fn createSurfaceGeneric(
-    comptime name: [*:0]const u8,
+    comptime name: [:0]const u8,
     instance: *const Instance,
     create_info: anytype,
 ) Error!vk.VkSurfaceKHR {
     log.debug("loading delegate \"{s}\" ...", .{name});
-    const F = ?*const fn (
-        vk.VkInstance,
-        ?*const @TypeOf(create_info),
-        ?*const vk.VkAllocationCallbacks,
-        ?*vk.VkSurfaceKHR,
-    ) callconv(.c) vk.VkResult;
 
     var surface: vk.VkSurfaceKHR = undefined;
-    const create_surface = @as(F, @ptrCast(
-        instance.get_proc_addr(instance.handle, name),
-    )) orelse return error.LoaderFailed;
-
-    try utils.call(
-        create_surface,
-        .{
-            instance.handle,
-            &create_info,
-            null,
-            &surface,
-        },
-        error.SurfaceCreationFailed,
-    );
+    try utils.call(try instance.getProcAddr(name), .{
+        instance.handle,
+        &create_info,
+        null,
+        &surface,
+    }, error.SurfaceCreationFailed);
 
     return surface;
 }

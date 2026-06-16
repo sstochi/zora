@@ -337,7 +337,7 @@ pub const PresentMode = enum(c_int) {
     _,
 };
 
-pub fn VulkanDelegate(comptime name: [:0]const u8) type {
+pub fn Delegate(comptime name: [:0]const u8) type {
     return *const @TypeOf(@field(vk, name));
 }
 
@@ -366,12 +366,9 @@ pub inline fn getProcAddr(
     comptime name: [:0]const u8,
     get_proc_addr: anytype,
     arg: anytype,
-) GenericError!VulkanDelegate(name) {
+) GenericError!Delegate(name) {
     return @ptrCast(
-        get_proc_addr(
-            arg,
-            name.ptr,
-        ) orelse return error.LoaderFailed,
+        get_proc_addr(arg, name.ptr) orelse return error.LoaderFailed,
     );
 }
 
@@ -382,6 +379,7 @@ pub inline fn call(
 ) (@TypeOf(@"error") || GenericError)!void {
     const F = @TypeOf(function);
     const type_info = @typeInfo(F);
+
     if (type_info != .pointer) @compileError("not a function pointer");
     if (@typeInfo(type_info.pointer.child) != .@"fn") @compileError("not a function pointer");
 

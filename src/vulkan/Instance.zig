@@ -7,7 +7,10 @@ const Self = @This();
 const Error = zora.Instance.Error;
 const GenericError = zora.GenericError;
 const Options = zora.Instance.Options;
-const VulkanDelegate = utils.VulkanDelegate;
+const Delegate = utils.Delegate;
+
+const GetInstanceProcAddr = Delegate("vkGetInstanceProcAddr");
+const DestroyDebugUtilsMessenger = Delegate("vkDestroyDebugUtilsMessengerEXT");
 
 const log = std.log.scoped(.instance);
 const required_extensions = extensions ++ debug_extensions;
@@ -103,33 +106,33 @@ const VulkanLoader = switch (zora.builtin.target) {
 };
 
 const Vtable = struct {
-    getDeviceProcAddr: *const @TypeOf(vk.vkGetDeviceProcAddr),
+    getDeviceProcAddr: Delegate("vkGetDeviceProcAddr"),
 
-    createDevice: *const @TypeOf(vk.vkCreateDevice),
+    createDevice: Delegate("vkCreateDevice"),
 
-    destroyInstance: *const @TypeOf(vk.vkDestroyInstance),
-    destroyDevice: *const @TypeOf(vk.vkDestroyDevice),
-    destroySurfaceKHR: *const @TypeOf(vk.vkDestroySurfaceKHR),
+    destroyInstance: Delegate("vkDestroyInstance"),
+    destroyDevice: Delegate("vkDestroyDevice"),
+    destroySurfaceKHR: Delegate("vkDestroySurfaceKHR"),
 
-    enumeratePhysicalDevices: *const @TypeOf(vk.vkEnumeratePhysicalDevices),
-    enumerateDeviceExtensionProperties: *const @TypeOf(vk.vkEnumerateDeviceExtensionProperties),
+    enumeratePhysicalDevices: Delegate("vkEnumeratePhysicalDevices"),
+    enumerateDeviceExtensionProperties: Delegate("vkEnumerateDeviceExtensionProperties"),
 
-    getPhysicalDeviceQueueFamilyProperties: *const @TypeOf(vk.vkGetPhysicalDeviceQueueFamilyProperties),
-    getPhysicalDeviceSurfaceSupportKHR: *const @TypeOf(vk.vkGetPhysicalDeviceSurfaceSupportKHR),
-    getPhysicalDeviceSurfaceCapabilitiesKHR: *const @TypeOf(vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR),
-    getPhysicalDeviceSurfaceFormatsKHR: *const @TypeOf(vk.vkGetPhysicalDeviceSurfaceFormatsKHR),
-    getPhysicalDeviceSurfacePresentModesKHR: *const @TypeOf(vk.vkGetPhysicalDeviceSurfacePresentModesKHR),
-    getPhysicalDeviceProperties: *const @TypeOf(vk.vkGetPhysicalDeviceProperties),
-    getPhysicalDeviceMemoryProperties: *const @TypeOf(vk.vkGetPhysicalDeviceMemoryProperties),
+    getPhysicalDeviceQueueFamilyProperties: Delegate("vkGetPhysicalDeviceQueueFamilyProperties"),
+    getPhysicalDeviceSurfaceSupportKHR: Delegate("vkGetPhysicalDeviceSurfaceSupportKHR"),
+    getPhysicalDeviceSurfaceCapabilitiesKHR: Delegate("vkGetPhysicalDeviceSurfaceCapabilitiesKHR"),
+    getPhysicalDeviceSurfaceFormatsKHR: Delegate("vkGetPhysicalDeviceSurfaceFormatsKHR"),
+    getPhysicalDeviceSurfacePresentModesKHR: Delegate("vkGetPhysicalDeviceSurfacePresentModesKHR"),
+    getPhysicalDeviceProperties: Delegate("vkGetPhysicalDeviceProperties"),
+    getPhysicalDeviceMemoryProperties: Delegate("vkGetPhysicalDeviceMemoryProperties"),
 
-    queuePresentKHR: *const @TypeOf(vk.vkQueuePresentKHR),
+    queuePresentKHR: Delegate("vkQueuePresentKHR"),
 };
 
 vtable: Vtable,
 handle: vk.VkInstance,
 messenger_handle: vk.VkDebugUtilsMessengerEXT,
-get_proc_addr: *const @TypeOf(vk.vkGetInstanceProcAddr),
-destroy_messenger: *const @TypeOf(vk.vkDestroyDebugUtilsMessengerEXT),
+get_proc_addr: GetInstanceProcAddr,
+destroy_messenger: DestroyDebugUtilsMessenger,
 loader: VulkanLoader,
 
 pub fn create(_: Options) Error!Self {
@@ -161,7 +164,7 @@ pub fn create(_: Options) Error!Self {
     log.debug("loading essential delegates ...", .{});
 
     const get_proc_addr = loader.lookup(
-        *const @TypeOf(vk.vkGetInstanceProcAddr),
+        GetInstanceProcAddr,
         "vkGetInstanceProcAddr",
     ) orelse return error.LoaderFailed;
 
@@ -293,7 +296,7 @@ pub fn destroy(self: *Self) void {
 pub fn getProcAddr(
     self: *const Self,
     comptime name: [:0]const u8,
-) GenericError!VulkanDelegate(name) {
+) GenericError!Delegate(name) {
     return try utils.getProcAddr(
         name,
         self.get_proc_addr,
@@ -303,10 +306,10 @@ pub fn getProcAddr(
 
 fn setupDiagnosticMessenger(
     instance: vk.VkInstance,
-    get_proc_addr: *const @TypeOf(vk.vkGetInstanceProcAddr),
+    get_proc_addr: GetInstanceProcAddr,
     create_info: *const vk.VkDebugUtilsMessengerCreateInfoEXT,
     handle: *vk.VkDebugUtilsMessengerEXT,
-) Error!*const @TypeOf(vk.vkDestroyDebugUtilsMessengerEXT) {
+) Error!DestroyDebugUtilsMessenger {
     const create_messenger = try utils.getProcAddr(
         "vkCreateDebugUtilsMessengerEXT",
         get_proc_addr,
