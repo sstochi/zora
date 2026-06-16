@@ -347,9 +347,9 @@ pub fn Delegate(comptime name: []const u8) type {
 
 /// Comptime vulkan delegate loader with no runtime overhead.
 pub fn Vtable(comptime delegates: []const [:0]const u8) type {
-    const Attributes = std.builtin.Type.StructField.Attributes;
-    const attrs: [delegates.len]Attributes = @splat(Attributes{});
+    const attrs: [delegates.len]std.builtin.Type.StructField.Attributes = @splat(.{});
 
+    // create type map
     var types: [delegates.len]type = @splat(@TypeOf(null));
     inline for (delegates, 0..) |name, i| types[i] = Delegate(name);
 
@@ -369,8 +369,8 @@ pub fn Vtable(comptime delegates: []const [:0]const u8) type {
             arg: anytype,
         ) GenericError!Impl {
             var inner: Inner = undefined;
-
             log.debug("loading vtable ({} total):", .{delegates.len});
+
             inline for (delegates) |name| {
                 log.debug(" delegate \"{s}\" ...", .{name});
                 @field(inner, name) = try getProcAddr(name, get_proc_addr, arg);
