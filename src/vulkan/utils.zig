@@ -339,11 +339,13 @@ pub const PresentMode = enum(c_int) {
     _,
 };
 
-pub fn Delegate(comptime name: [:0]const u8) type {
+/// Vulkan function pointer
+pub fn Delegate(comptime name: []const u8) type {
     if (!@hasDecl(vk, name)) @compileError("no such delegate \"" ++ name ++ "\"");
     return *const @TypeOf(@field(vk, name));
 }
 
+/// Comptime vulkan delegate loader with no runtime overhead.
 pub fn Vtable(comptime delegates: []const [:0]const u8) type {
     const Attributes = std.builtin.Type.StructField.Attributes;
     const attrs: [delegates.len]Attributes = @splat(Attributes{});
@@ -356,12 +358,8 @@ pub fn Vtable(comptime delegates: []const [:0]const u8) type {
         const Impl = @This();
 
         fn ReturnType(comptime name: []const u8) type {
-            if (!@hasField(Inner, name)) {
-                @compileError("no such delegate \"" ++ name ++ "\"");
-            }
-
-            const type_info = @typeInfo(@FieldType(Inner, name));
-            return @typeInfo(type_info.pointer.child).@"fn".return_type.?;
+            const pointer_info = @typeInfo(Delegate(name)).pointer;
+            return @typeInfo(pointer_info.child).@"fn".return_type.?;
         }
 
         inner: Inner,
