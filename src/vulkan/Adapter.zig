@@ -159,7 +159,7 @@ const PhysicalDevice = struct {
         return total;
     }
 
-    pub fn compareLessThan(
+    pub fn compareGreaterThan(
         power_mode: zora.PowerMode,
         a: PhysicalDevice,
         b: PhysicalDevice,
@@ -427,7 +427,7 @@ fn findPhyDevice(
 
     // sort the devices using a scoring algorithm
     const slice = device_buffer[0..device_count];
-    std.mem.sort(PhysicalDevice, slice, power_mode, PhysicalDevice.compareLessThan);
+    std.mem.sort(PhysicalDevice, slice, power_mode, PhysicalDevice.compareGreaterThan);
 
     log.info("available devices:", .{});
     for (slice) |*phy| {

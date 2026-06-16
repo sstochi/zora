@@ -3,10 +3,9 @@ const vk = @import("vulkan");
 const builtin = @import("builtin");
 const zora = @import("../root.zig");
 
-const Self = @This();
-const GenericError = zora.GenericError;
-
 const log = std.log.scoped(.utils);
+
+const GenericError = zora.GenericError;
 
 pub const Format = enum(c_int) {
     unknown = vk.VK_FORMAT_UNDEFINED,
@@ -341,7 +340,6 @@ pub const PresentMode = enum(c_int) {
 
 /// Vulkan function pointer
 pub fn Delegate(comptime name: []const u8) type {
-    if (!@hasDecl(vk, name)) @compileError("no such delegate \"" ++ name ++ "\"");
     return *const @TypeOf(@field(vk, name));
 }
 
@@ -359,6 +357,7 @@ pub fn Vtable(comptime delegates: []const [:0]const u8) type {
 
         fn ReturnType(comptime name: []const u8) type {
             const pointer_info = @typeInfo(Delegate(name)).pointer;
+            // per zig: "TODO change the language spec to make this not optional."
             return @typeInfo(pointer_info.child).@"fn".return_type.?;
         }
 
@@ -391,17 +390,13 @@ pub fn Vtable(comptime delegates: []const [:0]const u8) type {
             self: *const Impl,
             comptime name: []const u8,
             args: anytype,
-            @"error": anytype,
-        ) (@TypeOf(@"error") || GenericError)!void {
-            if (!@hasField(Inner, name)) {
-                @compileError("no such delegate \"" ++ name ++ "\"");
-            }
-
+            err: anytype,
+        ) (@TypeOf(err) || GenericError)!void {
             return callResultInner(
                 name,
                 @field(self.inner, name),
                 args,
-                @"error",
+                err,
             );
         }
     };
@@ -420,8 +415,8 @@ pub inline fn getProcAddr(
 pub inline fn callResult(
     function: anytype,
     args: anytype,
-    @"error": anytype,
-) (@TypeOf(@"error") || GenericError)!void {
+    err: anytype,
+) (@TypeOf(err) || GenericError)!void {
     const F = @TypeOf(function);
 
     // check whether it's a pointer
@@ -438,15 +433,20 @@ pub inline fn callResult(
         else => @compileError("not a function pointer"),
     }
 
-    return callResultInner(@typeName(F), function, args, @"error");
+    return callResultInner(
+        @typeName(F),
+        function,
+        args,
+        err,
+    );
 }
 
 inline fn callResultInner(
     comptime ctx: []const u8,
     function: anytype,
     args: anytype,
-    @"error": anytype,
-) (@TypeOf(@"error") || GenericError)!void {
+    err: anytype,
+) (@TypeOf(err) || GenericError)!void {
     return switch (@call(.auto, function, args)) {
         vk.VK_SUCCESS => {},
 
@@ -459,6 +459,6 @@ inline fn callResultInner(
         vk.VK_ERROR_OUT_OF_DEVICE_MEMORY,
         => error.OutOfMemory,
 
-        else => @"error",
+        else => err,
     };
 }
