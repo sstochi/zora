@@ -16,25 +16,27 @@ const Options = zora.Adapter.Options;
 const Info = zora.Adapter.Info;
 const Delegate = utils.Delegate;
 
+const GetDeviceProcAddr = Delegate("vkGetDeviceProcAddr");
+
 const extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 };
 
-const Vtable = struct {
-    getDeviceQueue: Delegate("vkGetDeviceQueue"),
+const Vtable = utils.Vtable(&.{
+    "vkGetDeviceQueue",
 
-    createShaderModule: Delegate("vkCreateShaderModule"),
-    createSemaphore: Delegate("vkCreateSemaphore"),
-    createSwapchainKHR: Delegate("vkCreateSwapchainKHR"),
+    "vkCreateShaderModule",
+    "vkCreateSemaphore",
+    "vkCreateSwapchainKHR",
 
-    destroyShaderModule: Delegate("vkDestroyShaderModule"),
-    destroySemaphore: Delegate("vkDestroySemaphore"),
-    destroySwapchainKHR: Delegate("vkDestroySwapchainKHR"),
+    "vkDestroyShaderModule",
+    "vkDestroySemaphore",
+    "vkDestroySwapchainKHR",
 
-    deviceWaitIdle: Delegate("vkDeviceWaitIdle"),
-    acquireNextImageKHR: Delegate("vkAcquireNextImageKHR"),
-    queuePresentKHR: Delegate("vkQueuePresentKHR"),
-};
+    "vkDeviceWaitIdle",
+    "vkAcquireNextImageKHR",
+    "vkQueuePresentKHR",
+});
 
 const PhysicalDevice = struct {
     name: [256]u8,
@@ -48,8 +50,8 @@ const PhysicalDevice = struct {
         handle: vk.VkPhysicalDevice,
         surface: vk.VkSurfaceKHR,
     ) ?PhysicalDevice {
-        const max_queues: u32 = 128;
-        const max_extensions: u32 = 1024;
+        const max_queues: u32 = 64;
+        const max_extensions: u32 = 256;
         const bytes_in_mb = 1000 * 1000;
 
         const vtable = &instance.vtable;
@@ -59,8 +61,8 @@ const PhysicalDevice = struct {
         var mem_prop: vk.VkPhysicalDeviceMemoryProperties = undefined;
 
         // query info about the device
-        instance.vtable.getPhysicalDeviceProperties(handle, &prop);
-        instance.vtable.getPhysicalDeviceMemoryProperties(handle, &mem_prop);
+        vtable.call("vkGetPhysicalDeviceProperties", .{ handle, &prop });
+        vtable.call("vkGetPhysicalDeviceMemoryProperties", .{ handle, &mem_prop });
 
         var ext_buffer: [max_extensions]vk.VkExtensionProperties = undefined;
         var queue_buffer: [max_queues]vk.VkQueueFamilyProperties = undefined;
@@ -68,14 +70,14 @@ const PhysicalDevice = struct {
         var queue_count = max_queues;
 
         // finally, query its queue family props...
-        vtable.getPhysicalDeviceQueueFamilyProperties(
+        vtable.call("vkGetPhysicalDeviceQueueFamilyProperties", .{
             handle,
             &queue_count,
             &queue_buffer,
-        );
+        });
 
         // ... and its extensions
-        utils.call(vtable.enumerateDeviceExtensionProperties, .{
+        vtable.callResult("vkEnumerateDeviceExtensionProperties", .{
             handle,
             null,
             &ext_count,
@@ -98,7 +100,7 @@ const PhysicalDevice = struct {
         var surface_queue_idx: ?u32 = null;
         var supports_surface: vk.VkBool32 = 0;
         for (0..queue_count) |j| {
-            utils.call(vtable.getPhysicalDeviceSurfaceSupportKHR, .{
+            vtable.callResult("vkGetPhysicalDeviceSurfaceSupportKHR", .{
                 handle,
                 @as(u32, @intCast(j)),
                 surface,
@@ -169,6 +171,7 @@ const PhysicalDevice = struct {
 vtable: Vtable,
 phy_device: PhysicalDevice,
 instance: *const Instance,
+get_proc_addr: GetDeviceProcAddr,
 handle: vk.VkDevice,
 surface: vk.VkSurfaceKHR,
 graphics_queue: vk.VkQueue,
@@ -178,13 +181,23 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
     const priority: f32 = 1.0;
     const instance = &instance_outer.inner;
 
-    const surface = try createSurface(&instance_outer.inner, options.window_info);
-    errdefer instance.vtable.destroySurfaceKHR(instance.handle, surface, null);
+    // load vkGetDeviceProcAddr
+    const get_proc_addr = try utils.getProcAddr(
+        "vkGetDeviceProcAddr",
+        instance.get_proc_addr,
+        instance.handle,
+    );
 
+    // create surface & regsiter errdefer
+    const surface = try createSurface(&instance_outer.inner, options.window_info);
+    errdefer instance.vtable.call("vkDestroySurfaceKHR", .{
+        instance.handle,
+        surface,
+        null,
+    });
+
+    // rank physical devices and pick one
     const phy_device = try findPhyDevice(instance, surface, options.power_mode);
-    const info_count = @as(u32, @intFromBool(
-        phy_device.surface_queue_idx != phy_device.graphics_queue_idx,
-    )) + 1;
 
     const infos = [_]vk.VkDeviceQueueCreateInfo{
         .{
@@ -204,17 +217,22 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
     const features = vk.VkPhysicalDeviceFeatures{};
     const create_info = vk.VkDeviceCreateInfo{
         .sType = vk.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pQueueCreateInfos = &infos,
-        .queueCreateInfoCount = info_count,
         .pEnabledFeatures = &features,
+
+        .pQueueCreateInfos = &infos,
+        .queueCreateInfoCount = @as(u32, @intFromBool(
+            phy_device.surface_queue_idx != phy_device.graphics_queue_idx,
+        )) + 1,
+
         .ppEnabledExtensionNames = if (extensions.len == 0) null else extensions.ptr,
         .enabledExtensionCount = @intCast(extensions.len),
     };
 
-    // create vulkan device
     log.debug("creating vulkan device ...", .{});
     var device: vk.VkDevice = null;
-    try utils.call(instance.vtable.createDevice, .{
+
+    // create vulkan device
+    try instance.vtable.callResult("vkCreateDevice", .{
         phy_device.handle,
         &create_info,
         null,
@@ -224,17 +242,31 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
     const destroy_device = try instance.getProcAddr("vkDestroyDevice");
     errdefer destroy_device(device, null);
 
-    const vtable = try utils.loadVtable(Vtable, instance.vtable.getDeviceProcAddr, device);
+    const vtable = try Vtable.load(get_proc_addr, device);
 
     var graphics_queue: vk.VkQueue = null;
     var surface_queue: vk.VkQueue = null;
-    vtable.getDeviceQueue(device, phy_device.graphics_queue_idx, 0, &graphics_queue);
-    vtable.getDeviceQueue(device, phy_device.surface_queue_idx, 0, &surface_queue);
+
+    // query both queues
+    vtable.call("vkGetDeviceQueue", .{
+        device,
+        phy_device.graphics_queue_idx,
+        0,
+        &graphics_queue,
+    });
+
+    vtable.call("vkGetDeviceQueue", .{
+        device,
+        phy_device.surface_queue_idx,
+        0,
+        &surface_queue,
+    });
 
     return .{
         .phy_device = phy_device,
         .vtable = vtable,
         .instance = &instance_outer.inner,
+        .get_proc_addr = get_proc_addr,
         .surface = surface,
         .handle = device,
         .graphics_queue = graphics_queue,
@@ -244,14 +276,14 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
 
 pub fn close(self: *Self) void {
     log.debug("destroying vulkan surface ...", .{});
-    self.instance.vtable.destroySurfaceKHR(
+    self.instance.vtable.call("vkDestroySurfaceKHR", .{
         self.instance.handle,
         self.surface,
         null,
-    );
+    });
 
     log.debug("destroying vulkan device ...", .{});
-    self.instance.vtable.destroyDevice(self.handle, null);
+    self.instance.vtable.call("vkDestroyDevice", .{ self.handle, null });
 }
 
 pub inline fn createSwapchain(
@@ -278,7 +310,7 @@ pub fn getProcAddr(
 ) GenericError!Delegate(name) {
     return try utils.getProcAddr(
         name,
-        self.instance.vtable.getDeviceProcAddr,
+        self.get_proc_addr,
         self.handle,
     );
 }
@@ -353,7 +385,7 @@ fn createSurfaceGeneric(
     log.debug("loading delegate \"{s}\" ...", .{name});
 
     var surface: vk.VkSurfaceKHR = undefined;
-    try utils.call(try instance.getProcAddr(name), .{
+    try utils.callResult(try instance.getProcAddr(name), .{
         instance.handle,
         &create_info,
         null,
@@ -378,7 +410,7 @@ fn findPhyDevice(
     log.debug("querying vulkan physical devices ...", .{});
 
     // enumerate all physical devices
-    try utils.call(instance.vtable.enumeratePhysicalDevices, .{
+    try instance.vtable.callResult("vkEnumeratePhysicalDevices", .{
         instance.handle,
         &handle_count,
         &handle_buffer,

@@ -35,14 +35,14 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     log.debug("querying supported properties ...", .{});
 
     // query capabilities
-    try utils.call(instance.vtable.getPhysicalDeviceSurfaceCapabilitiesKHR, .{
+    try instance.vtable.callResult("vkGetPhysicalDeviceSurfaceCapabilitiesKHR", .{
         phy_device.handle,
         adapter.surface,
         &capabilities,
     }, error.SwapchainCreationFailed);
 
     // ... surface formats...
-    try utils.call(instance.vtable.getPhysicalDeviceSurfacePresentModesKHR, .{
+    try instance.vtable.callResult("vkGetPhysicalDeviceSurfacePresentModesKHR", .{
         phy_device.handle,
         adapter.surface,
         &mode_count,
@@ -50,7 +50,7 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     }, error.SwapchainCreationFailed);
 
     // ... and present modes
-    try utils.call(instance.vtable.getPhysicalDeviceSurfaceFormatsKHR, .{
+    try instance.vtable.callResult("vkGetPhysicalDeviceSurfaceFormatsKHR", .{
         phy_device.handle,
         adapter.surface,
         &format_count,
@@ -125,13 +125,19 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     // create swapchain khr
     log.debug("creating vulkan swapchain ...", .{});
     var handle: vk.VkSwapchainKHR = undefined;
-    try utils.call(adapter.vtable.createSwapchainKHR, .{
+
+    try adapter.vtable.callResult("vkCreateSwapchainKHR", .{
         adapter.handle,
         &create_info,
         null,
         &handle,
     }, error.SwapchainCreationFailed);
-    errdefer adapter.vtable.destroySwapchainKHR(adapter.handle, handle, null);
+
+    errdefer adapter.vtable.call("vkDestroySwapchainKHR", .{
+        adapter.handle,
+        handle,
+        null,
+    });
 
     var acquire_image_sem: vk.VkSemaphore = undefined;
     var present_sem: vk.VkSemaphore = undefined;
@@ -140,14 +146,14 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
         .sType = vk.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
     };
 
-    try utils.call(adapter.vtable.createSemaphore, .{
+    try adapter.vtable.callResult("vkCreateSemaphore", .{
         adapter.handle,
         &sem_create_info,
         null,
         &acquire_image_sem,
     }, error.SwapchainCreationFailed);
 
-    try utils.call(adapter.vtable.createSemaphore, .{
+    try adapter.vtable.callResult("vkCreateSemaphore", .{
         adapter.handle,
         &sem_create_info,
         null,
@@ -174,14 +180,14 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
 }
 
 pub fn destroy(self: *Self) void {
-    _ = self.adapter.vtable.deviceWaitIdle(self.adapter.handle);
+    _ = self.adapter.vtable.call("vkDeviceWaitIdle", .{self.adapter.handle});
 
     log.debug("destroying vulkan swapchain ...", .{});
-    self.adapter.vtable.destroySwapchainKHR(
+    self.adapter.vtable.call("vkDestroySwapchainKHR", .{
         self.adapter.handle,
         self.handle,
         null,
-    );
+    });
 }
 
 pub fn present(self: *Self) void {
@@ -189,7 +195,7 @@ pub fn present(self: *Self) void {
     // it's simply here to submite changes to wayland :)
     var idx: u32 = undefined;
 
-    utils.call(self.adapter.vtable.acquireNextImageKHR, .{
+    self.adapter.vtable.callResult("vkAcquireNextImageKHR", .{
         self.adapter.handle,
         self.handle,
         std.math.maxInt(u64),
@@ -210,7 +216,10 @@ pub fn present(self: *Self) void {
         .waitSemaphoreCount = @intCast(semaphores.len),
     };
 
-    _ = self.adapter.vtable.queuePresentKHR(self.adapter.surface_queue, &create_info);
+    _ = self.adapter.vtable.call("vkQueuePresentKHR", .{
+        self.adapter.surface_queue,
+        &create_info,
+    });
 }
 
 pub fn info(self: *const Self) *const Info {

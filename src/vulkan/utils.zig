@@ -2,6 +2,8 @@ const std = @import("std");
 const vk = @import("vulkan");
 const builtin = @import("builtin");
 const zora = @import("../root.zig");
+
+const Self = @This();
 const GenericError = zora.GenericError;
 
 const log = std.log.scoped(.utils);
@@ -338,28 +340,73 @@ pub const PresentMode = enum(c_int) {
 };
 
 pub fn Delegate(comptime name: [:0]const u8) type {
+    if (!@hasDecl(vk, name)) @compileError("no such delegate \"" ++ name ++ "\"");
     return *const @TypeOf(@field(vk, name));
 }
 
-pub inline fn loadVtable(
-    comptime V: type,
-    get_proc_addr: anytype,
-    arg: anytype,
-) GenericError!V {
-    const fields = @typeInfo(V).@"struct".fields;
-    var table: V = undefined;
+pub fn Vtable(comptime delegates: []const [:0]const u8) type {
+    const Attributes = std.builtin.Type.StructField.Attributes;
+    const attrs: [delegates.len]Attributes = @splat(Attributes{});
 
-    log.debug("loading vtable ({} total):", .{fields.len});
-    inline for (fields) |field| {
-        const name: [:0]const u8 = comptime "vk" ++ .{
-            std.ascii.toUpper(field.name[0]),
-        } ++ field.name[1..];
+    var types: [delegates.len]type = @splat(@TypeOf(null));
+    inline for (delegates, 0..) |name, i| types[i] = Delegate(name);
 
-        log.debug(" delegate \"{s}\" ...", .{name});
-        @field(table, field.name) = try getProcAddr(name, get_proc_addr, arg);
-    }
+    const Inner = @Struct(.auto, null, delegates, &types, &attrs);
+    return struct {
+        const Impl = @This();
 
-    return table;
+        fn ReturnType(comptime name: []const u8) type {
+            if (!@hasField(Inner, name)) {
+                @compileError("no such delegate \"" ++ name ++ "\"");
+            }
+
+            const type_info = @typeInfo(@FieldType(Inner, name));
+            return @typeInfo(type_info.pointer.child).@"fn".return_type.?;
+        }
+
+        inner: Inner,
+
+        pub fn load(
+            get_proc_addr: anytype,
+            arg: anytype,
+        ) GenericError!Impl {
+            var inner: Inner = undefined;
+
+            log.debug("loading vtable ({} total):", .{delegates.len});
+            inline for (delegates) |name| {
+                log.debug(" delegate \"{s}\" ...", .{name});
+                @field(inner, name) = try getProcAddr(name, get_proc_addr, arg);
+            }
+
+            return .{ .inner = inner };
+        }
+
+        pub fn call(
+            self: *const Impl,
+            comptime name: []const u8,
+            args: anytype,
+        ) ReturnType(name) {
+            return @call(.auto, @field(self.inner, name), args);
+        }
+
+        pub fn callResult(
+            self: *const Impl,
+            comptime name: []const u8,
+            args: anytype,
+            @"error": anytype,
+        ) (@TypeOf(@"error") || GenericError)!void {
+            if (!@hasField(Inner, name)) {
+                @compileError("no such delegate \"" ++ name ++ "\"");
+            }
+
+            return callResultInner(
+                name,
+                @field(self.inner, name),
+                args,
+                @"error",
+            );
+        }
+    };
 }
 
 pub inline fn getProcAddr(
@@ -372,23 +419,42 @@ pub inline fn getProcAddr(
     );
 }
 
-pub inline fn call(
+pub inline fn callResult(
     function: anytype,
     args: anytype,
     @"error": anytype,
 ) (@TypeOf(@"error") || GenericError)!void {
     const F = @TypeOf(function);
-    const type_info = @typeInfo(F);
 
-    if (type_info != .pointer) @compileError("not a function pointer");
-    if (@typeInfo(type_info.pointer.child) != .@"fn") @compileError("not a function pointer");
+    // check whether it's a pointer
+    const pointer_info = switch (@typeInfo(F)) {
+        .pointer => |ptr| ptr,
+        else => @compileError("not a function pointer"),
+    };
 
+    // check whether a function pointer and whether returns VkResult
+    switch (@typeInfo(pointer_info.child)) {
+        .@"fn" => |@"fn"| if (@"fn".return_type != vk.VkResult) {
+            @compileError("function must return VkResult");
+        },
+        else => @compileError("not a function pointer"),
+    }
+
+    return callResultInner(@typeName(F), function, args, @"error");
+}
+
+inline fn callResultInner(
+    comptime ctx: []const u8,
+    function: anytype,
+    args: anytype,
+    @"error": anytype,
+) (@TypeOf(@"error") || GenericError)!void {
     return switch (@call(.auto, function, args)) {
         vk.VK_SUCCESS => {},
 
         vk.VK_INCOMPLETE => log.warn(
-            "{s}: VK_INCOMPLETE!",
-            .{@typeName(F)},
+            "{s}: result is VK_INCOMPLETE!",
+            .{ctx},
         ),
 
         vk.VK_ERROR_OUT_OF_HOST_MEMORY,

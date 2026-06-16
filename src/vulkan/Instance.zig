@@ -54,28 +54,25 @@ const validation_layers: []const [*:0]const u8 = switch (zora.builtin.debug) {
     false => &.{},
 };
 
-const Vtable = struct {
-    getDeviceProcAddr: Delegate("vkGetDeviceProcAddr"),
+const Vtable = utils.Vtable(&.{
+    "vkCreateDevice",
+    "vkDestroyInstance",
+    "vkDestroyDevice",
+    "vkDestroySurfaceKHR",
 
-    createDevice: Delegate("vkCreateDevice"),
+    "vkEnumeratePhysicalDevices",
+    "vkEnumerateDeviceExtensionProperties",
 
-    destroyInstance: Delegate("vkDestroyInstance"),
-    destroyDevice: Delegate("vkDestroyDevice"),
-    destroySurfaceKHR: Delegate("vkDestroySurfaceKHR"),
+    "vkGetPhysicalDeviceQueueFamilyProperties",
+    "vkGetPhysicalDeviceSurfaceSupportKHR",
+    "vkGetPhysicalDeviceSurfaceCapabilitiesKHR",
+    "vkGetPhysicalDeviceSurfaceFormatsKHR",
+    "vkGetPhysicalDeviceSurfacePresentModesKHR",
+    "vkGetPhysicalDeviceProperties",
+    "vkGetPhysicalDeviceMemoryProperties",
 
-    enumeratePhysicalDevices: Delegate("vkEnumeratePhysicalDevices"),
-    enumerateDeviceExtensionProperties: Delegate("vkEnumerateDeviceExtensionProperties"),
-
-    getPhysicalDeviceQueueFamilyProperties: Delegate("vkGetPhysicalDeviceQueueFamilyProperties"),
-    getPhysicalDeviceSurfaceSupportKHR: Delegate("vkGetPhysicalDeviceSurfaceSupportKHR"),
-    getPhysicalDeviceSurfaceCapabilitiesKHR: Delegate("vkGetPhysicalDeviceSurfaceCapabilitiesKHR"),
-    getPhysicalDeviceSurfaceFormatsKHR: Delegate("vkGetPhysicalDeviceSurfaceFormatsKHR"),
-    getPhysicalDeviceSurfacePresentModesKHR: Delegate("vkGetPhysicalDeviceSurfacePresentModesKHR"),
-    getPhysicalDeviceProperties: Delegate("vkGetPhysicalDeviceProperties"),
-    getPhysicalDeviceMemoryProperties: Delegate("vkGetPhysicalDeviceMemoryProperties"),
-
-    queuePresentKHR: Delegate("vkQueuePresentKHR"),
-};
+    "vkQueuePresentKHR",
+});
 
 const Loader = switch (zora.builtin.target) {
     // zig 0.16.0 removed windows from std.DynLib... Thanks, Andrew!
@@ -166,7 +163,7 @@ pub fn create(_: Options) Error!Self {
     var query_count: u32 = max_properties;
 
     // query all extensions
-    try utils.call(enum_extensions, .{
+    try utils.callResult(enum_extensions, .{
         null,
         &query_count,
         &query_buffer,
@@ -245,7 +242,7 @@ pub fn create(_: Options) Error!Self {
     // create vulkan instance
     log.debug("creating vulkan instance ...", .{});
     var handle: vk.VkInstance = null;
-    try utils.call(create_instance, .{
+    try utils.callResult(create_instance, .{
         &create_info,
         null,
         &handle,
@@ -270,7 +267,7 @@ pub fn create(_: Options) Error!Self {
 
     return .{
         // load virtual functions
-        .vtable = try utils.loadVtable(Vtable, get_proc_addr, handle),
+        .vtable = try Vtable.load(get_proc_addr, handle),
 
         .handle = handle,
         .messenger_handle = messenger_handle,
@@ -289,7 +286,7 @@ pub fn destroy(self: *Self) void {
         null,
     );
 
-    self.vtable.destroyInstance(self.handle, null);
+    self.vtable.call("vkDestroyInstance", .{ self.handle, null });
     self.loader.close();
 }
 
@@ -322,7 +319,7 @@ fn setupDiagnosticMessenger(
         instance,
     );
 
-    try utils.call(create_messenger, .{
+    try utils.callResult(create_messenger, .{
         instance,
         create_info,
         null,

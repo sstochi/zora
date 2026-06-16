@@ -33,11 +33,11 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
 
     // cleanup properly on errdefer
     errdefer for (0..stage_count) |i| {
-        adapter.vtable.destroyShaderModule(
+        adapter.vtable.call("vkDestroyShaderModule", .{
             adapter.handle,
             stages[i].handle,
             null,
-        );
+        });
     };
 
     inline for (@typeInfo(@TypeOf(options)).@"struct".fields) |*field| blk: {
@@ -50,7 +50,7 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
         };
 
         var handle: vk.VkShaderModule = undefined;
-        try utils.call(adapter.vtable.createShaderModule, .{
+        try adapter.vtable.callResult("vkCreateShaderModule", .{
             adapter.handle,
             &create_info,
             null,
@@ -79,13 +79,13 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
 }
 
 pub fn destroy(self: *Self) void {
-    _ = self.adapter.vtable.deviceWaitIdle(self.adapter.handle);
+    _ = self.adapter.vtable.call("vkDeviceWaitIdle", .{self.adapter.handle});
 
     for (0..self.stage_count) |i| {
-        self.adapter.vtable.destroyShaderModule(
+        self.adapter.vtable.call("vkDestroyShaderModule", .{
             self.adapter.handle,
             self.stages[i].handle,
             null,
-        );
+        });
     }
 }
