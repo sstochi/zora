@@ -50,12 +50,12 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
         };
 
         var handle: vk.VkShaderModule = undefined;
-        try adapter.vtable.callResult("vkCreateShaderModule", .{
-            adapter.handle,
-            &create_info,
-            null,
-            &handle,
-        }, error.ShaderCreationFailed);
+        try adapter.vtable.callError(
+            .strict,
+            "vkCreateShaderModule",
+            error.ShaderCreationFailed,
+            .{ adapter.handle, &create_info, null, &handle },
+        );
 
         stages[stage_count] = .{
             // prepare create info, useful later when (re)creating the pipeline

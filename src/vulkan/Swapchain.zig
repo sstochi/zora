@@ -35,27 +35,28 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     log.debug("querying supported properties ...", .{});
 
     // query capabilities
-    try instance.vtable.callResult("vkGetPhysicalDeviceSurfaceCapabilitiesKHR", .{
-        phy_device.handle,
-        adapter.surface,
-        &capabilities,
-    }, error.SwapchainCreationFailed);
+    try instance.vtable.callError(
+        .strict,
+        "vkGetPhysicalDeviceSurfaceCapabilitiesKHR",
+        error.SwapchainCreationFailed,
+        .{ phy_device.handle, adapter.surface, &capabilities },
+    );
 
     // ... surface formats...
-    try instance.vtable.callResult("vkGetPhysicalDeviceSurfacePresentModesKHR", .{
-        phy_device.handle,
-        adapter.surface,
-        &mode_count,
-        &mode_buffer,
-    }, error.SwapchainCreationFailed);
+    try instance.vtable.callError(
+        .strict,
+        "vkGetPhysicalDeviceSurfacePresentModesKHR",
+        error.SwapchainCreationFailed,
+        .{ phy_device.handle, adapter.surface, &mode_count, &mode_buffer },
+    );
 
     // ... and present modes
-    try instance.vtable.callResult("vkGetPhysicalDeviceSurfaceFormatsKHR", .{
-        phy_device.handle,
-        adapter.surface,
-        &format_count,
-        &format_buffer,
-    }, error.SwapchainCreationFailed);
+    try instance.vtable.callError(
+        .strict,
+        "vkGetPhysicalDeviceSurfaceFormatsKHR",
+        error.SwapchainCreationFailed,
+        .{ phy_device.handle, adapter.surface, &format_count, &format_buffer },
+    );
 
     // decide on the target present mode
     const target_mode: vk.VkPresentModeKHR = switch (options.vsync_mode) {
@@ -126,12 +127,12 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     log.debug("creating vulkan swapchain ...", .{});
     var handle: vk.VkSwapchainKHR = undefined;
 
-    try adapter.vtable.callResult("vkCreateSwapchainKHR", .{
-        adapter.handle,
-        &create_info,
-        null,
-        &handle,
-    }, error.SwapchainCreationFailed);
+    try adapter.vtable.callError(
+        .strict,
+        "vkCreateSwapchainKHR",
+        error.SwapchainCreationFailed,
+        .{ adapter.handle, &create_info, null, &handle },
+    );
 
     errdefer adapter.vtable.call("vkDestroySwapchainKHR", .{
         adapter.handle,
@@ -146,19 +147,19 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
         .sType = vk.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
     };
 
-    try adapter.vtable.callResult("vkCreateSemaphore", .{
-        adapter.handle,
-        &sem_create_info,
-        null,
-        &acquire_image_sem,
-    }, error.SwapchainCreationFailed);
+    try adapter.vtable.callError(
+        .strict,
+        "vkCreateSemaphore",
+        error.SwapchainCreationFailed,
+        .{ adapter.handle, &sem_create_info, null, &acquire_image_sem },
+    );
 
-    try adapter.vtable.callResult("vkCreateSemaphore", .{
-        adapter.handle,
-        &sem_create_info,
-        null,
-        &present_sem,
-    }, error.SwapchainCreationFailed);
+    try adapter.vtable.callError(
+        .strict,
+        "vkCreateSemaphore",
+        error.SwapchainCreationFailed,
+        .{ adapter.handle, &sem_create_info, null, &present_sem },
+    );
 
     return .{
         .chain_info = .{
@@ -195,14 +196,19 @@ pub fn present(self: *Self) void {
     // it's simply here to submite changes to wayland :)
     var idx: u32 = undefined;
 
-    self.adapter.vtable.callResult("vkAcquireNextImageKHR", .{
-        self.adapter.handle,
-        self.handle,
-        std.math.maxInt(u64),
-        self.acquire_image_sem,
-        null,
-        &idx,
-    }, error.Failed) catch @panic(":(");
+    self.adapter.vtable.callError(
+        .strict,
+        "vkAcquireNextImageKHR",
+        error.Failed,
+        .{
+            self.adapter.handle,
+            self.handle,
+            std.math.maxInt(u64),
+            self.acquire_image_sem,
+            null,
+            &idx,
+        },
+    ) catch @panic(":(");
 
     var handles: [1]vk.VkSwapchainKHR = .{self.handle};
     var semaphores: [1]vk.VkSemaphore = .{self.acquire_image_sem};

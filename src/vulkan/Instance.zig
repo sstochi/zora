@@ -163,11 +163,11 @@ pub fn create(_: Options) Error!Self {
     var query_count: u32 = max_properties;
 
     // query all extensions
-    try utils.callResult(enum_extensions, .{
+    try utils.callError(.strict, enum_extensions, error.InstanceCreationFailed, .{
         null,
         &query_count,
         &query_buffer,
-    }, error.InstanceCreationFailed);
+    });
 
     // create initial extension list
     var ext_buffer: [optional_extensions.len + required_extensions.len][*:0]const u8 = undefined;
@@ -242,11 +242,12 @@ pub fn create(_: Options) Error!Self {
     // create vulkan instance
     log.debug("creating vulkan instance ...", .{});
     var handle: vk.VkInstance = null;
-    try utils.callResult(create_instance, .{
-        &create_info,
-        null,
-        &handle,
-    }, error.InstanceCreationFailed);
+    try utils.callError(
+        .strict,
+        create_instance,
+        error.InstanceCreationFailed,
+        .{ &create_info, null, &handle },
+    );
 
     // load destroy and setup defer
     const destroy_instance = try utils.getProcAddr(
@@ -319,12 +320,12 @@ fn setupDiagnosticMessenger(
         instance,
     );
 
-    try utils.callResult(create_messenger, .{
-        instance,
-        create_info,
-        null,
-        handle,
-    }, error.InstanceCreationFailed);
+    try utils.callError(
+        .strict,
+        create_messenger,
+        error.InstanceCreationFailed,
+        .{ instance, create_info, null, handle },
+    );
 
     return destroy_messenger;
 }

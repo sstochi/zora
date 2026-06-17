@@ -77,16 +77,19 @@ const PhysicalDevice = struct {
         });
 
         // ... and its extensions
-        vtable.callResult("vkEnumerateDeviceExtensionProperties", .{
+        if (vtable.callResult("vkEnumerateDeviceExtensionProperties", .{
             handle,
             null,
             &ext_count,
             &ext_buffer,
-        }, error.Failed) catch return null;
+        }).fatal()) {
+            return null;
+        }
 
         // we search for required extensions
         search: for (extensions) |ext| {
             const ext_name = std.mem.span(ext);
+
             for (0..ext_count) |j| {
                 const name = std.mem.sliceTo(&ext_buffer[j].extensionName, 0);
                 if (std.mem.eql(u8, ext_name, name)) continue :search;
@@ -99,13 +102,16 @@ const PhysicalDevice = struct {
         var graphics_queue_idx: ?u32 = null;
         var surface_queue_idx: ?u32 = null;
         var supports_surface: vk.VkBool32 = 0;
+
         for (0..queue_count) |j| {
-            vtable.callResult("vkGetPhysicalDeviceSurfaceSupportKHR", .{
+            if (vtable.callResult("vkGetPhysicalDeviceSurfaceSupportKHR", .{
                 handle,
                 @as(u32, @intCast(j)),
                 surface,
                 &supports_surface,
-            }, error.Failed) catch continue;
+            }).fatal()) {
+                continue;
+            }
 
             // check if queue supprots graphics
             if ((queue_buffer[j].queueFlags & vk.VK_QUEUE_GRAPHICS_BIT) != 0) {
@@ -232,18 +238,17 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
     var device: vk.VkDevice = null;
 
     // create vulkan device
-    try instance.vtable.callResult("vkCreateDevice", .{
-        phy_device.handle,
-        &create_info,
-        null,
-        &device,
-    }, error.AdapterAcquisitionFailed);
+    try instance.vtable.callError(
+        .strict,
+        "vkCreateDevice",
+        error.AdapterAcquisitionFailed,
+        .{ phy_device.handle, &create_info, null, &device },
+    );
 
     const destroy_device = try instance.getProcAddr("vkDestroyDevice");
     errdefer destroy_device(device, null);
 
     const vtable = try Vtable.load(get_proc_addr, device);
-
     var graphics_queue: vk.VkQueue = null;
     var surface_queue: vk.VkQueue = null;
 
@@ -385,12 +390,12 @@ fn createSurfaceGeneric(
     log.debug("loading delegate \"{s}\" ...", .{name});
 
     var surface: vk.VkSurfaceKHR = undefined;
-    try utils.callResult(try instance.getProcAddr(name), .{
-        instance.handle,
-        &create_info,
-        null,
-        &surface,
-    }, error.SurfaceCreationFailed);
+    try utils.callError(
+        .strict,
+        try instance.getProcAddr(name),
+        error.SurfaceCreationFailed,
+        .{ instance.handle, &create_info, null, &surface },
+    );
 
     return surface;
 }
@@ -410,11 +415,12 @@ fn findPhyDevice(
     log.debug("querying vulkan physical devices ...", .{});
 
     // enumerate all physical devices
-    try instance.vtable.callResult("vkEnumeratePhysicalDevices", .{
-        instance.handle,
-        &handle_count,
-        &handle_buffer,
-    }, error.AdapterAcquisitionFailed);
+    try instance.vtable.callError(
+        .strict,
+        "vkEnumeratePhysicalDevices",
+        error.AdapterAcquisitionFailed,
+        .{ instance.handle, &handle_count, &handle_buffer },
+    );
 
     for (0..handle_count) |i| {
         device_buffer[device_count] = PhysicalDevice.query(

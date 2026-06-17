@@ -7,6 +7,56 @@ const log = std.log.scoped(.utils);
 
 const GenericError = zora.GenericError;
 
+/// A collection of known VkResult values
+/// Errors aren't handled separately because vulkan code often
+/// relies on the specific error to
+pub const Result = enum(c_int) {
+    success,
+    not_ready,
+    timeout,
+    event_set,
+    event_reset,
+    incomplete,
+
+    out_of_host_memory = -1,
+    out_of_device_memory = -2,
+    initialization_failed = -3,
+    device_lost = -4,
+    memory_map_failed = -5,
+    layer_not_present = -6,
+    extension_not_present = -7,
+    feature_not_present = -8,
+    incompatible_driver = -9,
+    too_many_objects = -10,
+    format_not_supported = -11,
+    fragmented_pool = -12,
+    unknown = -13,
+
+    validation_failed = -1000011001,
+
+    // VK_KHR_surface
+    surface_lost_khr = -1000000000,
+    native_window_in_use_khr = -1000000001,
+
+    // VK_KHR_swapchain
+    suboptimal_khr = 1000001003,
+    out_of_date = -1000001004,
+
+    _,
+
+    pub fn fatal(self: Result) bool {
+        return @intFromEnum(self) < 0;
+    }
+};
+
+pub const ErrorLevel = enum {
+    /// Results other than `success` are treated like errors.
+    strict,
+
+    /// Results other than `success` that aren't `fatal` are logged and ignored.
+    permissive,
+};
+
 pub const Format = enum(c_int) {
     unknown = vk.VK_FORMAT_UNDEFINED,
     r4g4_unorm_pack8 = vk.VK_FORMAT_R4G4_UNORM_PACK8,
@@ -347,17 +397,17 @@ pub fn Delegate(comptime name: []const u8) type {
 pub fn Vtable(comptime delegates: []const [:0]const u8) type {
     const attrs: [delegates.len]std.builtin.Type.StructField.Attributes = @splat(.{});
 
-    // create type map
-    var types: [delegates.len]type = @splat(@TypeOf(null));
+    var types: [delegates.len]type = undefined;
     inline for (delegates, 0..) |name, i| types[i] = Delegate(name);
 
     const Inner = @Struct(.auto, null, delegates, &types, &attrs);
+
     return struct {
         const Impl = @This();
 
         fn ReturnType(comptime name: []const u8) type {
             const pointer_info = @typeInfo(Delegate(name)).pointer;
-            // per zig: "TODO change the language spec to make this not optional."
+            // zig: "TODO change the language spec to make this not optional."
             return @typeInfo(pointer_info.child).@"fn".return_type.?;
         }
 
@@ -390,13 +440,27 @@ pub fn Vtable(comptime delegates: []const [:0]const u8) type {
             self: *const Impl,
             comptime name: []const u8,
             args: anytype,
-            err: anytype,
-        ) (@TypeOf(err) || GenericError)!void {
+        ) Result {
             return callResultInner(
                 name,
                 @field(self.inner, name),
                 args,
+            );
+        }
+
+        pub fn callError(
+            self: *const Impl,
+            comptime level: ErrorLevel,
+            comptime name: []const u8,
+            err: anytype,
+            args: anytype,
+        ) @TypeOf(err)!void {
+            return try callErrorInner(
+                level,
+                name,
+                @field(self.inner, name),
                 err,
+                args,
             );
         }
     };
@@ -415,12 +479,55 @@ pub inline fn getProcAddr(
 pub inline fn callResult(
     function: anytype,
     args: anytype,
-    err: anytype,
-) (@TypeOf(err) || GenericError)!void {
-    const F = @TypeOf(function);
+) Result {
+    return callResultInner(
+        @typeName(@TypeOf(function)),
+        function,
+        args,
+    );
+}
 
+pub inline fn callError(
+    comptime level: ErrorLevel,
+    function: anytype,
+    err: anytype,
+    args: anytype,
+) @TypeOf(err)!void {
+    return try callErrorInner(
+        level,
+        @typeName(@TypeOf(function)),
+        function,
+        err,
+        args,
+    );
+}
+
+inline fn callErrorInner(
+    comptime level: ErrorLevel,
+    comptime ctx: []const u8,
+    function: anytype,
+    err: anytype,
+    args: anytype,
+) @TypeOf(err)!void {
+    const result = callResultInner(
+        ctx,
+        function,
+        args,
+    );
+
+    return switch (level) {
+        .permissive => if (result.fatal()) err else {},
+        .strict => if (result != .success) err else {},
+    };
+}
+
+inline fn callResultInner(
+    comptime ctx: []const u8,
+    function: anytype,
+    args: anytype,
+) Result {
     // check whether it's a pointer
-    const pointer_info = switch (@typeInfo(F)) {
+    const pointer_info = switch (@typeInfo(@TypeOf(function))) {
         .pointer => |ptr| ptr,
         else => @compileError("not a function pointer"),
     };
@@ -433,32 +540,14 @@ pub inline fn callResult(
         else => @compileError("not a function pointer"),
     }
 
-    return callResultInner(
-        @typeName(F),
-        function,
-        args,
-        err,
-    );
-}
+    const result: Result = @enumFromInt(@call(.auto, function, args));
 
-inline fn callResultInner(
-    comptime ctx: []const u8,
-    function: anytype,
-    args: anytype,
-    err: anytype,
-) (@TypeOf(err) || GenericError)!void {
-    return switch (@call(.auto, function, args)) {
-        vk.VK_SUCCESS => {},
+    if (zora.builtin.debug and result != .success) {
+        log.warn("{s} call result: {s}", .{
+            ctx,
+            std.enums.tagName(Result, result) orelse "unknown",
+        });
+    }
 
-        vk.VK_INCOMPLETE => log.warn(
-            "{s}: result is VK_INCOMPLETE!",
-            .{ctx},
-        ),
-
-        vk.VK_ERROR_OUT_OF_HOST_MEMORY,
-        vk.VK_ERROR_OUT_OF_DEVICE_MEMORY,
-        => error.OutOfMemory,
-
-        else => err,
-    };
+    return result;
 }
