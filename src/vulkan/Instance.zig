@@ -141,7 +141,6 @@ pub fn create(_: Options) Error!Self {
     errdefer loader.close();
 
     log.debug("loading essential delegates ...", .{});
-
     const get_proc_addr = loader.lookup(
         GetInstanceProcAddr,
         "vkGetInstanceProcAddr",
@@ -163,7 +162,7 @@ pub fn create(_: Options) Error!Self {
     var query_count: u32 = max_properties;
 
     // query all extensions
-    try utils.callError(.strict, enum_extensions, error.InstanceCreationFailed, .{
+    try utils.callError(.default, enum_extensions, error.InstanceCreationFailed, .{
         null,
         &query_count,
         &query_buffer,
@@ -243,7 +242,7 @@ pub fn create(_: Options) Error!Self {
     log.debug("creating vulkan instance ...", .{});
     var handle: vk.VkInstance = null;
     try utils.callError(
-        .strict,
+        .default,
         create_instance,
         error.InstanceCreationFailed,
         .{ &create_info, null, &handle },
@@ -321,7 +320,7 @@ fn setupDiagnosticMessenger(
     );
 
     try utils.callError(
-        .strict,
+        .default,
         create_messenger,
         error.InstanceCreationFailed,
         .{ instance, create_info, null, handle },

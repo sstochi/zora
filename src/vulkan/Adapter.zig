@@ -239,7 +239,7 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
 
     // create vulkan device
     try instance.vtable.callError(
-        .strict,
+        .default,
         "vkCreateDevice",
         error.AdapterAcquisitionFailed,
         .{ phy_device.handle, &create_info, null, &device },
@@ -391,7 +391,7 @@ fn createSurfaceGeneric(
 
     var surface: vk.VkSurfaceKHR = undefined;
     try utils.callError(
-        .strict,
+        .default,
         try instance.getProcAddr(name),
         error.SurfaceCreationFailed,
         .{ instance.handle, &create_info, null, &surface },
@@ -416,7 +416,7 @@ fn findPhyDevice(
 
     // enumerate all physical devices
     try instance.vtable.callError(
-        .strict,
+        .default,
         "vkEnumeratePhysicalDevices",
         error.AdapterAcquisitionFailed,
         .{ instance.handle, &handle_count, &handle_buffer },

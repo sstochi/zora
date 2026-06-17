@@ -36,7 +36,7 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
 
     // query capabilities
     try instance.vtable.callError(
-        .strict,
+        .default,
         "vkGetPhysicalDeviceSurfaceCapabilitiesKHR",
         error.SwapchainCreationFailed,
         .{ phy_device.handle, adapter.surface, &capabilities },
@@ -44,7 +44,7 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
 
     // ... surface formats...
     try instance.vtable.callError(
-        .strict,
+        .default,
         "vkGetPhysicalDeviceSurfacePresentModesKHR",
         error.SwapchainCreationFailed,
         .{ phy_device.handle, adapter.surface, &mode_count, &mode_buffer },
@@ -52,7 +52,7 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
 
     // ... and present modes
     try instance.vtable.callError(
-        .strict,
+        .default,
         "vkGetPhysicalDeviceSurfaceFormatsKHR",
         error.SwapchainCreationFailed,
         .{ phy_device.handle, adapter.surface, &format_count, &format_buffer },
@@ -128,7 +128,7 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     var handle: vk.VkSwapchainKHR = undefined;
 
     try adapter.vtable.callError(
-        .strict,
+        .default,
         "vkCreateSwapchainKHR",
         error.SwapchainCreationFailed,
         .{ adapter.handle, &create_info, null, &handle },
@@ -148,14 +148,14 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     };
 
     try adapter.vtable.callError(
-        .strict,
+        .default,
         "vkCreateSemaphore",
         error.SwapchainCreationFailed,
         .{ adapter.handle, &sem_create_info, null, &acquire_image_sem },
     );
 
     try adapter.vtable.callError(
-        .strict,
+        .default,
         "vkCreateSemaphore",
         error.SwapchainCreationFailed,
         .{ adapter.handle, &sem_create_info, null, &present_sem },
@@ -197,7 +197,7 @@ pub fn present(self: *Self) void {
     var idx: u32 = undefined;
 
     self.adapter.vtable.callError(
-        .strict,
+        .default,
         "vkAcquireNextImageKHR",
         error.Failed,
         .{

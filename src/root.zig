@@ -12,8 +12,6 @@ pub const backend = switch (builtin.backend) {
 pub const GenericError = error{
     /// Allocation failed due to fragmented/lack of available memory.
     OutOfMemory,
-
-    ///
     LoaderFailed,
 };
 

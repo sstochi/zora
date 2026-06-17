@@ -49,12 +49,12 @@ pub const Result = enum(c_int) {
     }
 };
 
-pub const ErrorLevel = enum {
+pub const ErrorPolicy = enum {
     /// Results other than `success` are treated like errors.
-    strict,
+    default,
 
     /// Results other than `success` that aren't `fatal` are logged and ignored.
-    permissive,
+    relaxed,
 };
 
 pub const Format = enum(c_int) {
@@ -243,120 +243,6 @@ pub const Format = enum(c_int) {
     astc_12x10_srgb_block = vk.VK_FORMAT_ASTC_12x10_SRGB_BLOCK,
     astc_12x12_unorm_block = vk.VK_FORMAT_ASTC_12x12_UNORM_BLOCK,
     astc_12x12_srgb_block = vk.VK_FORMAT_ASTC_12x12_SRGB_BLOCK,
-    g8b8g8r8_422_unorm = vk.VK_FORMAT_G8B8G8R8_422_UNORM,
-    b8g8r8g8_422_unorm = vk.VK_FORMAT_B8G8R8G8_422_UNORM,
-    g8_b8_r8_3plane_420_unorm = vk.VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM,
-    g8_b8r8_2plane_420_unorm = vk.VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
-    g8_b8_r8_3plane_422_unorm = vk.VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM,
-    g8_b8r8_2plane_422_unorm = vk.VK_FORMAT_G8_B8R8_2PLANE_422_UNORM,
-    g8_b8_r8_3plane_444_unorm = vk.VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM,
-    r10x6_unorm_pack16 = vk.VK_FORMAT_R10X6_UNORM_PACK16,
-    r10x6g10x6_unorm_2pack16 = vk.VK_FORMAT_R10X6G10X6_UNORM_2PACK16,
-    r10x6g10x6b10x6a10x6_unorm_4pack16 = vk.VK_FORMAT_R10X6G10X6B10X6A10X6_UNORM_4PACK16,
-    g10x6b10x6g10x6r10x6_422_unorm_4pack16 = vk.VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16,
-    b10x6g10x6r10x6g10x6_422_unorm_4pack16 = vk.VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16,
-    g10x6_b10x6_r10x6_3plane_420_unorm_3pack16 = vk.VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16,
-    g10x6_b10x6r10x6_2plane_420_unorm_3pack16 = vk.VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
-    g10x6_b10x6_r10x6_3plane_422_unorm_3pack16 = vk.VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16,
-    g10x6_b10x6r10x6_2plane_422_unorm_3pack16 = vk.VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16,
-    g10x6_b10x6_r10x6_3plane_444_unorm_3pack16 = vk.VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16,
-    r12x4_unorm_pack16 = vk.VK_FORMAT_R12X4_UNORM_PACK16,
-    r12x4g12x4_unorm_2pack16 = vk.VK_FORMAT_R12X4G12X4_UNORM_2PACK16,
-    r12x4g12x4b12x4a12x4_unorm_4pack16 = vk.VK_FORMAT_R12X4G12X4B12X4A12X4_UNORM_4PACK16,
-    g12x4b12x4g12x4r12x4_422_unorm_4pack16 = vk.VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16,
-    b12x4g12x4r12x4g12x4_422_unorm_4pack16 = vk.VK_FORMAT_B12X4G12X4R12X4G12X4_422_UNORM_4PACK16,
-    g12x4_b12x4_r12x4_3plane_420_unorm_3pack16 = vk.VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16,
-    g12x4_b12x4r12x4_2plane_420_unorm_3pack16 = vk.VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,
-    g12x4_b12x4_r12x4_3plane_422_unorm_3pack16 = vk.VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16,
-    g12x4_b12x4r12x4_2plane_422_unorm_3pack16 = vk.VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16,
-    g12x4_b12x4_r12x4_3plane_444_unorm_3pack16 = vk.VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16,
-    g16b16g16r16_422_unorm = vk.VK_FORMAT_G16B16G16R16_422_UNORM,
-    b16g16r16g16_422_unorm = vk.VK_FORMAT_B16G16R16G16_422_UNORM,
-    g16_b16_r16_3plane_420_unorm = vk.VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM,
-    g16_b16r16_2plane_420_unorm = vk.VK_FORMAT_G16_B16R16_2PLANE_420_UNORM,
-    g16_b16_r16_3plane_422_unorm = vk.VK_FORMAT_G16_B16_R16_3PLANE_422_UNORM,
-    g16_b16r16_2plane_422_unorm = vk.VK_FORMAT_G16_B16R16_2PLANE_422_UNORM,
-    g16_b16_r16_3plane_444_unorm = vk.VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM,
-    g8_b8r8_2plane_444_unorm = vk.VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
-    g10x6_b10x6r10x6_2plane_444_unorm_3pack16 = vk.VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16,
-    g12x4_b12x4r12x4_2plane_444_unorm_3pack16 = vk.VK_FORMAT_G12X4_B12X4R12X4_2PLANE_444_UNORM_3PACK16,
-    g16_b16r16_2plane_444_unorm = vk.VK_FORMAT_G16_B16R16_2PLANE_444_UNORM,
-    a4r4g4b4_unorm_pack16 = vk.VK_FORMAT_A4R4G4B4_UNORM_PACK16,
-    a4b4g4r4_unorm_pack16 = vk.VK_FORMAT_A4B4G4R4_UNORM_PACK16,
-    astc_4x4_sfloat_block = vk.VK_FORMAT_ASTC_4x4_SFLOAT_BLOCK,
-    astc_5x4_sfloat_block = vk.VK_FORMAT_ASTC_5x4_SFLOAT_BLOCK,
-    astc_5x5_sfloat_block = vk.VK_FORMAT_ASTC_5x5_SFLOAT_BLOCK,
-    astc_6x5_sfloat_block = vk.VK_FORMAT_ASTC_6x5_SFLOAT_BLOCK,
-    astc_6x6_sfloat_block = vk.VK_FORMAT_ASTC_6x6_SFLOAT_BLOCK,
-    astc_8x5_sfloat_block = vk.VK_FORMAT_ASTC_8x5_SFLOAT_BLOCK,
-    astc_8x6_sfloat_block = vk.VK_FORMAT_ASTC_8x6_SFLOAT_BLOCK,
-    astc_8x8_sfloat_block = vk.VK_FORMAT_ASTC_8x8_SFLOAT_BLOCK,
-    astc_10x5_sfloat_block = vk.VK_FORMAT_ASTC_10x5_SFLOAT_BLOCK,
-    astc_10x6_sfloat_block = vk.VK_FORMAT_ASTC_10x6_SFLOAT_BLOCK,
-    astc_10x8_sfloat_block = vk.VK_FORMAT_ASTC_10x8_SFLOAT_BLOCK,
-    astc_10x10_sfloat_block = vk.VK_FORMAT_ASTC_10x10_SFLOAT_BLOCK,
-    astc_12x10_sfloat_block = vk.VK_FORMAT_ASTC_12x10_SFLOAT_BLOCK,
-    astc_12x12_sfloat_block = vk.VK_FORMAT_ASTC_12x12_SFLOAT_BLOCK,
-    a1b5g5r5_unorm_pack16 = vk.VK_FORMAT_A1B5G5R5_UNORM_PACK16,
-    a8_unorm = vk.VK_FORMAT_A8_UNORM,
-    pvrtc1_2bpp_unorm_block_img = vk.VK_FORMAT_PVRTC1_2BPP_UNORM_BLOCK_IMG,
-    pvrtc1_4bpp_unorm_block_img = vk.VK_FORMAT_PVRTC1_4BPP_UNORM_BLOCK_IMG,
-    pvrtc2_2bpp_unorm_block_img = vk.VK_FORMAT_PVRTC2_2BPP_UNORM_BLOCK_IMG,
-    pvrtc2_4bpp_unorm_block_img = vk.VK_FORMAT_PVRTC2_4BPP_UNORM_BLOCK_IMG,
-    pvrtc1_2bpp_srgb_block_img = vk.VK_FORMAT_PVRTC1_2BPP_SRGB_BLOCK_IMG,
-    pvrtc1_4bpp_srgb_block_img = vk.VK_FORMAT_PVRTC1_4BPP_SRGB_BLOCK_IMG,
-    pvrtc2_2bpp_srgb_block_img = vk.VK_FORMAT_PVRTC2_2BPP_SRGB_BLOCK_IMG,
-    pvrtc2_4bpp_srgb_block_img = vk.VK_FORMAT_PVRTC2_4BPP_SRGB_BLOCK_IMG,
-    astc_3x3x3_unorm_block_ext = vk.VK_FORMAT_ASTC_3x3x3_UNORM_BLOCK_EXT,
-    astc_3x3x3_srgb_block_ext = vk.VK_FORMAT_ASTC_3x3x3_SRGB_BLOCK_EXT,
-    astc_3x3x3_sfloat_block_ext = vk.VK_FORMAT_ASTC_3x3x3_SFLOAT_BLOCK_EXT,
-    astc_4x3x3_unorm_block_ext = vk.VK_FORMAT_ASTC_4x3x3_UNORM_BLOCK_EXT,
-    astc_4x3x3_srgb_block_ext = vk.VK_FORMAT_ASTC_4x3x3_SRGB_BLOCK_EXT,
-    astc_4x3x3_sfloat_block_ext = vk.VK_FORMAT_ASTC_4x3x3_SFLOAT_BLOCK_EXT,
-    astc_4x4x3_unorm_block_ext = vk.VK_FORMAT_ASTC_4x4x3_UNORM_BLOCK_EXT,
-    astc_4x4x3_srgb_block_ext = vk.VK_FORMAT_ASTC_4x4x3_SRGB_BLOCK_EXT,
-    astc_4x4x3_sfloat_block_ext = vk.VK_FORMAT_ASTC_4x4x3_SFLOAT_BLOCK_EXT,
-    astc_4x4x4_unorm_block_ext = vk.VK_FORMAT_ASTC_4x4x4_UNORM_BLOCK_EXT,
-    astc_4x4x4_srgb_block_ext = vk.VK_FORMAT_ASTC_4x4x4_SRGB_BLOCK_EXT,
-    astc_4x4x4_sfloat_block_ext = vk.VK_FORMAT_ASTC_4x4x4_SFLOAT_BLOCK_EXT,
-    astc_5x4x4_unorm_block_ext = vk.VK_FORMAT_ASTC_5x4x4_UNORM_BLOCK_EXT,
-    astc_5x4x4_srgb_block_ext = vk.VK_FORMAT_ASTC_5x4x4_SRGB_BLOCK_EXT,
-    astc_5x4x4_sfloat_block_ext = vk.VK_FORMAT_ASTC_5x4x4_SFLOAT_BLOCK_EXT,
-    astc_5x5x4_unorm_block_ext = vk.VK_FORMAT_ASTC_5x5x4_UNORM_BLOCK_EXT,
-    astc_5x5x4_srgb_block_ext = vk.VK_FORMAT_ASTC_5x5x4_SRGB_BLOCK_EXT,
-    astc_5x5x4_sfloat_block_ext = vk.VK_FORMAT_ASTC_5x5x4_SFLOAT_BLOCK_EXT,
-    astc_5x5x5_unorm_block_ext = vk.VK_FORMAT_ASTC_5x5x5_UNORM_BLOCK_EXT,
-    astc_5x5x5_srgb_block_ext = vk.VK_FORMAT_ASTC_5x5x5_SRGB_BLOCK_EXT,
-    astc_5x5x5_sfloat_block_ext = vk.VK_FORMAT_ASTC_5x5x5_SFLOAT_BLOCK_EXT,
-    astc_6x5x5_unorm_block_ext = vk.VK_FORMAT_ASTC_6x5x5_UNORM_BLOCK_EXT,
-    astc_6x5x5_srgb_block_ext = vk.VK_FORMAT_ASTC_6x5x5_SRGB_BLOCK_EXT,
-    astc_6x5x5_sfloat_block_ext = vk.VK_FORMAT_ASTC_6x5x5_SFLOAT_BLOCK_EXT,
-    astc_6x6x5_unorm_block_ext = vk.VK_FORMAT_ASTC_6x6x5_UNORM_BLOCK_EXT,
-    astc_6x6x5_srgb_block_ext = vk.VK_FORMAT_ASTC_6x6x5_SRGB_BLOCK_EXT,
-    astc_6x6x5_sfloat_block_ext = vk.VK_FORMAT_ASTC_6x6x5_SFLOAT_BLOCK_EXT,
-    astc_6x6x6_unorm_block_ext = vk.VK_FORMAT_ASTC_6x6x6_UNORM_BLOCK_EXT,
-    astc_6x6x6_srgb_block_ext = vk.VK_FORMAT_ASTC_6x6x6_SRGB_BLOCK_EXT,
-    astc_6x6x6_sfloat_block_ext = vk.VK_FORMAT_ASTC_6x6x6_SFLOAT_BLOCK_EXT,
-    r8_bool_arm = vk.VK_FORMAT_R8_BOOL_ARM,
-    r16_sfloat_fpencoding_bfloat16_arm = vk.VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM,
-    r8_sfloat_fpencoding_float8e4m3_arm = vk.VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM,
-    r8_sfloat_fpencoding_float8e5m2_arm = vk.VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM,
-    r16g16_sfixed5_nv = vk.VK_FORMAT_R16G16_SFIXED5_NV,
-    r10x6_uint_pack16_arm = vk.VK_FORMAT_R10X6_UINT_PACK16_ARM,
-    r10x6g10x6_uint_2pack16_arm = vk.VK_FORMAT_R10X6G10X6_UINT_2PACK16_ARM,
-    r10x6g10x6b10x6a10x6_uint_4pack16_arm = vk.VK_FORMAT_R10X6G10X6B10X6A10X6_UINT_4PACK16_ARM,
-    r12x4_uint_pack16_arm = vk.VK_FORMAT_R12X4_UINT_PACK16_ARM,
-    r12x4g12x4_uint_2pack16_arm = vk.VK_FORMAT_R12X4G12X4_UINT_2PACK16_ARM,
-    r12x4g12x4b12x4a12x4_uint_4pack16_arm = vk.VK_FORMAT_R12X4G12X4B12X4A12X4_UINT_4PACK16_ARM,
-    r14x2_uint_pack16_arm = vk.VK_FORMAT_R14X2_UINT_PACK16_ARM,
-    r14x2g14x2_uint_2pack16_arm = vk.VK_FORMAT_R14X2G14X2_UINT_2PACK16_ARM,
-    r14x2g14x2b14x2a14x2_uint_4pack16_arm = vk.VK_FORMAT_R14X2G14X2B14X2A14X2_UINT_4PACK16_ARM,
-    r14x2_unorm_pack16_arm = vk.VK_FORMAT_R14X2_UNORM_PACK16_ARM,
-    r14x2g14x2_unorm_2pack16_arm = vk.VK_FORMAT_R14X2G14X2_UNORM_2PACK16_ARM,
-    r14x2g14x2b14x2a14x2_unorm_4pack16_arm = vk.VK_FORMAT_R14X2G14X2B14X2A14X2_UNORM_4PACK16_ARM,
-    g14x2_b14x2r14x2_2plane_420_unorm_3pack16_arm = vk.VK_FORMAT_G14X2_B14X2R14X2_2PLANE_420_UNORM_3PACK16_ARM,
-    g14x2_b14x2r14x2_2plane_422_unorm_3pack16_arm = vk.VK_FORMAT_G14X2_B14X2R14X2_2PLANE_422_UNORM_3PACK16_ARM,
-    max_enum = vk.VK_FORMAT_MAX_ENUM,
     _,
 };
 
@@ -388,7 +274,7 @@ pub const PresentMode = enum(c_int) {
     _,
 };
 
-/// Vulkan function pointer
+/// Vulkan function pointer.
 pub fn Delegate(comptime name: []const u8) type {
     return *const @TypeOf(@field(vk, name));
 }
@@ -400,7 +286,7 @@ pub fn Vtable(comptime delegates: []const [:0]const u8) type {
     var types: [delegates.len]type = undefined;
     inline for (delegates, 0..) |name, i| types[i] = Delegate(name);
 
-    const Inner = @Struct(.auto, null, delegates, &types, &attrs);
+    const InnerType = @Struct(.auto, null, delegates, &types, &attrs);
 
     return struct {
         const Impl = @This();
@@ -411,18 +297,19 @@ pub fn Vtable(comptime delegates: []const [:0]const u8) type {
             return @typeInfo(pointer_info.child).@"fn".return_type.?;
         }
 
-        inner: Inner,
+        inner: InnerType,
 
+        /// TODO change the language spec to make this not optional.
         pub fn load(
             get_proc_addr: anytype,
-            arg: anytype,
+            handle: anytype,
         ) GenericError!Impl {
-            var inner: Inner = undefined;
+            var inner: InnerType = undefined;
             log.debug("loading vtable ({} total):", .{delegates.len});
 
             inline for (delegates) |name| {
                 log.debug(" delegate \"{s}\" ...", .{name});
-                @field(inner, name) = try getProcAddr(name, get_proc_addr, arg);
+                @field(inner, name) = try getProcAddr(name, get_proc_addr, handle);
             }
 
             return .{ .inner = inner };
@@ -441,22 +328,18 @@ pub fn Vtable(comptime delegates: []const [:0]const u8) type {
             comptime name: []const u8,
             args: anytype,
         ) Result {
-            return callResultInner(
-                name,
-                @field(self.inner, name),
-                args,
-            );
+            return callResultInner(name, @field(self.inner, name), args);
         }
 
         pub fn callError(
             self: *const Impl,
-            comptime level: ErrorLevel,
+            comptime policy: ErrorPolicy,
             comptime name: []const u8,
             err: anytype,
             args: anytype,
         ) @TypeOf(err)!void {
             return try callErrorInner(
-                level,
+                policy,
                 name,
                 @field(self.inner, name),
                 err,
@@ -476,25 +359,14 @@ pub inline fn getProcAddr(
     );
 }
 
-pub inline fn callResult(
-    function: anytype,
-    args: anytype,
-) Result {
-    return callResultInner(
-        @typeName(@TypeOf(function)),
-        function,
-        args,
-    );
-}
-
 pub inline fn callError(
-    comptime level: ErrorLevel,
+    comptime policy: ErrorPolicy,
     function: anytype,
     err: anytype,
     args: anytype,
 ) @TypeOf(err)!void {
     return try callErrorInner(
-        level,
+        policy,
         @typeName(@TypeOf(function)),
         function,
         err,
@@ -502,22 +374,24 @@ pub inline fn callError(
     );
 }
 
+pub inline fn callResult(
+    function: anytype,
+    args: anytype,
+) Result {
+    return callResultInner(@typeName(@TypeOf(function)), function, args);
+}
+
 inline fn callErrorInner(
-    comptime level: ErrorLevel,
+    comptime policy: ErrorPolicy,
     comptime ctx: []const u8,
     function: anytype,
     err: anytype,
     args: anytype,
 ) @TypeOf(err)!void {
-    const result = callResultInner(
-        ctx,
-        function,
-        args,
-    );
-
-    return switch (level) {
-        .permissive => if (result.fatal()) err else {},
-        .strict => if (result != .success) err else {},
+    const result = callResultInner(ctx, function, args);
+    return switch (policy) {
+        .default => if (result != .success) err else {},
+        .relaxed => if (result.fatal()) err else {},
     };
 }
 
@@ -541,7 +415,6 @@ inline fn callResultInner(
     }
 
     const result: Result = @enumFromInt(@call(.auto, function, args));
-
     if (zora.builtin.debug and result != .success) {
         log.warn("{s} call result: {s}", .{
             ctx,
