@@ -23,12 +23,12 @@ adapter: *const Adapter,
 
 pub fn create(adapter: *const Adapter, options: Options) Error!Self {
     const stage_types = struct {
-        pub const vertex = vk.VK_SHADER_STAGE_VERTEX_BIT;
-        pub const fragment = vk.VK_SHADER_STAGE_FRAGMENT_BIT;
-        pub const compute = vk.VK_SHADER_STAGE_COMPUTE_BIT;
+        const vertex = vk.VK_SHADER_STAGE_VERTEX_BIT;
+        const fragment = vk.VK_SHADER_STAGE_FRAGMENT_BIT;
+        const compute = vk.VK_SHADER_STAGE_COMPUTE_BIT;
     };
 
-    var stages: [3]Stage = @splat(null);
+    var stages: [3]Stage = undefined;
     var stage_count: usize = 0;
 
     // cleanup properly on errdefer
