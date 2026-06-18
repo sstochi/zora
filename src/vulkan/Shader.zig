@@ -28,7 +28,7 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
         pub const compute = vk.VK_SHADER_STAGE_COMPUTE_BIT;
     };
 
-    var stages: [3]Stage = undefined;
+    var stages: [3]Stage = @splat(null);
     var stage_count: usize = 0;
 
     // cleanup properly on errdefer

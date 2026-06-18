@@ -238,7 +238,7 @@ pub const Shader = struct {
         entrypoint: [:0]const u8 = "main",
 
         /// Optional, improves compatability with OpenGL.
-        /// Historically, SpirV support in OpenGL remained relatively poor, even
+        /// SpirV support in OpenGL remained relatively poor, even
         /// after it's introduction into the core spec.
         /// If not null, must remain valid for the lifetime of the `Shader`.
         glsl: ?[]const u8 = null,
@@ -288,15 +288,15 @@ pub const Pipeline = struct {
     pub const VertexState = struct {};
 
     pub const BlendState = struct {
-        write_mask: WriteMask = .{ .r = true, .g = true, .b = true, .a = true },
+        write_mask: WriteMask,
 
-        color_src: BlendFactor = .src_alpha,
-        color_dst: BlendFactor = .one_minus_src_alpha,
-        color_op: BlendOp = .add,
+        color_src: BlendFactor,
+        color_dst: BlendFactor,
+        color_op: BlendOp,
 
-        alpha_src: BlendFactor = .one,
-        alpha_dst: BlendFactor = .zero,
-        alpha_op: BlendOp = .add,
+        alpha_src: BlendFactor,
+        alpha_dst: BlendFactor,
+        alpha_op: BlendOp,
     };
 
     pub const Options = struct {
@@ -354,11 +354,11 @@ pub const Sampler = struct {
     pub const AddressMode = enum { clamp, repeat };
 
     pub const Info = struct {
-        addr_mode_u: AddressMode = .clamp,
-        addr_mode_v: AddressMode = .clamp,
-        addr_mode_w: AddressMode = .clamp,
-        min_filter: Filter = .linear,
-        mag_filter: Filter = .linear,
+        addr_mode_u: AddressMode,
+        addr_mode_v: AddressMode,
+        addr_mode_w: AddressMode,
+        min_filter: Filter,
+        mag_filter: Filter,
         lod_min: f64 = 0.0,
         lod_max: f64 = 1.0,
     };

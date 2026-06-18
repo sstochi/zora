@@ -7,9 +7,7 @@ const log = std.log.scoped(.utils);
 
 const GenericError = zora.GenericError;
 
-/// A collection of known VkResult values
-/// Errors aren't handled separately because vulkan code often
-/// relies on the specific error to
+/// A collection of VkResult values, including errors.
 pub const Result = enum(c_int) {
     success,
     not_ready,

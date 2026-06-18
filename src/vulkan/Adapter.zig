@@ -87,16 +87,16 @@ const PhysicalDevice = struct {
         }
 
         // we search for required extensions
-        search: for (extensions) |ext| {
-            const ext_name = std.mem.span(ext);
-
+        for (extensions) |ext| {
             for (0..ext_count) |j| {
-                const name = std.mem.sliceTo(&ext_buffer[j].extensionName, 0);
-                if (std.mem.eql(u8, ext_name, name)) continue :search;
+                const name: [*:0]const u8 = @ptrCast(&ext_buffer[j].extensionName);
+                if (std.mem.orderZ(u8, ext, name) == .eq) {
+                    break;
+                }
+            } else {
+                // bail if haven't found even one
+                return null;
             }
-
-            // bail if haven't found even one
-            return null;
         }
 
         var graphics_queue_idx: ?u32 = null;
@@ -203,7 +203,7 @@ pub fn open(instance_outer: *zora.Instance, options: Options) Error!Self {
     });
 
     // rank physical devices and pick one
-    const phy_device = try findPhyDevice(instance, surface, options.power_mode);
+    const phy_device = try findDevice(instance, surface, options.power_mode);
 
     const infos = [_]vk.VkDeviceQueueCreateInfo{
         .{
@@ -400,7 +400,7 @@ fn createSurfaceGeneric(
     return surface;
 }
 
-fn findPhyDevice(
+fn findDevice(
     instance: *const Instance,
     surface: vk.VkSurfaceKHR,
     power_mode: zora.PowerMode,

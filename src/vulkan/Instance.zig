@@ -181,16 +181,14 @@ pub fn create(_: Options) Error!Self {
     // enable supported optional extensions
     log.info("supported optional extensions:", .{});
     for (optional_extensions) |ext| {
-        const opt_name = std.mem.span(ext);
-
         for (0..query_count) |i| {
-            const name = std.mem.sliceTo(&query_buffer[i].extensionName, 0);
-            if (std.mem.eql(u8, name, opt_name)) {
-                log.info(" \"{s}\"", .{name});
-                ext_buffer[ext_count] = ext;
-                ext_count += 1;
-                break;
-            }
+            const name: [*:0]const u8 = @ptrCast(&query_buffer[i].extensionName);
+            if (std.mem.orderZ(u8, ext, name) != .eq) continue;
+
+            log.info(" \"{s}\"", .{name});
+            ext_buffer[ext_count] = ext;
+            ext_count += 1;
+            break;
         }
     }
 
@@ -228,7 +226,7 @@ pub fn create(_: Options) Error!Self {
         .pfnUserCallback = diagnosticCallback,
     };
 
-    const create_info = vk.VkInstanceCreateInfo{
+    var create_info = vk.VkInstanceCreateInfo{
         .sType = vk.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pNext = if (zora.builtin.debug) @ptrCast(&messenger_create_info) else null,
         .pApplicationInfo = &app_info,
@@ -241,12 +239,20 @@ pub fn create(_: Options) Error!Self {
     // create vulkan instance
     log.debug("creating vulkan instance ...", .{});
     var handle: vk.VkInstance = null;
-    try utils.callError(
-        .default,
-        create_instance,
-        error.InstanceCreationFailed,
-        .{ &create_info, null, &handle },
-    );
+
+    blk: while (true) {
+        switch (utils.callResult(create_instance, .{ &create_info, null, &handle })) {
+            .success => break :blk,
+
+            .layer_not_present => {
+                log.warn("one or more validation layer(s) not supported, disabling all of them.", .{});
+                create_info.ppEnabledLayerNames = null;
+                create_info.enabledLayerCount = 0;
+            },
+
+            else => return error.InstanceCreationFailed,
+        }
+    }
 
     // load destroy and setup defer
     const destroy_instance = try utils.getProcAddr(
