@@ -162,7 +162,6 @@ loader: DynLib,
 pub fn create(_: Options) Error!Self {
     const max_extensions: u32 = 1024;
 
-    // load vulkan lib
     log.info("loading vulkan lib ...", .{});
     var loader = try DynLib.open();
     errdefer loader.close();
@@ -287,8 +286,6 @@ pub fn create(_: Options) Error!Self {
 
     return .{
         .diagnostic = Diagnostic.create(handle, get_proc_addr),
-
-        // load virtual functions
         .vtable = try Vtable.load(get_proc_addr, handle),
 
         .handle = handle,
@@ -298,12 +295,11 @@ pub fn create(_: Options) Error!Self {
 }
 
 pub fn destroy(self: *Self) void {
-    log.debug("destroying vulkan instance ...", .{});
-
     if (self.diagnostic) |*diag| {
         diag.destroy();
     }
 
+    log.debug("destroying vulkan instance ...", .{});
     self.vtable.call("vkDestroyInstance", .{ self.handle, null });
     self.loader.close();
 }
