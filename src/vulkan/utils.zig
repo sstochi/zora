@@ -2,10 +2,15 @@ const std = @import("std");
 const vk = @import("vulkan");
 const builtin = @import("builtin");
 const zora = @import("../root.zig");
+const GenericError = zora.GenericError;
 
 const log = std.log.scoped(.utils);
 
-const GenericError = zora.GenericError;
+const library_name: [:0]const u8 = switch (zora.builtin.target) {
+    .win32 => "vulkan-1.dll",
+    .unix, .android => "libvulkan.so",
+    .macos => "libvulkan.dylib",
+};
 
 /// A collection of VkResult values, including errors.
 pub const Result = enum(c_int) {
@@ -272,6 +277,59 @@ pub const PresentMode = enum(c_int) {
     _,
 };
 
+pub const DynLib = switch (zora.builtin.target) {
+    // zig 0.16.0 removed windows from std.DynLib... Thanks, Andrew!
+    .win32 => struct {
+        const BOOL = c_int;
+        const HMODULE = ?*anyopaque;
+        const FARPROC = ?*const fn () callconv(.c) c_int;
+
+        extern fn LoadLibraryA(lpLibFileName: [*:0]const u8) callconv(.c) HMODULE;
+        extern fn GetProcAddress(hModule: HMODULE, lpProcName: [*:0]const u8) callconv(.c) FARPROC;
+        extern fn FreeLibrary(hLibModule: HMODULE) callconv(.c) BOOL;
+
+        hmodule: HMODULE,
+
+        pub fn open() GenericError!DynLib {
+            return .{
+                .hmodule = LoadLibraryA(
+                    library_name.ptr,
+                ) orelse return error.LibraryLoadFailed,
+            };
+        }
+
+        pub fn close(self: *DynLib) void {
+            _ = FreeLibrary(self.hmodule);
+        }
+
+        pub fn lookup(self: *DynLib, comptime T: type, name: [:0]const u8) GenericError!T {
+            return @ptrCast(GetProcAddress(self.hmodule, name.ptr) orelse
+                return error.FunctionLoadFailed);
+        }
+    },
+
+    else => struct {
+        handle: std.DynLib,
+
+        pub fn open() GenericError!DynLib {
+            return .{
+                .handle = std.DynLib.open(
+                    library_name,
+                ) catch return error.LibraryLoadFailed,
+            };
+        }
+
+        pub fn close(self: *DynLib) void {
+            self.handle.close();
+        }
+
+        pub fn lookup(self: *DynLib, comptime T: type, name: [:0]const u8) GenericError!T {
+            return @ptrCast(self.handle.lookup(T, name) orelse
+                return error.FunctionLoadFailed);
+        }
+    },
+};
+
 /// Vulkan function pointer.
 pub fn Delegate(comptime name: []const u8) type {
     return *const @TypeOf(@field(vk, name));
@@ -352,9 +410,8 @@ pub inline fn getProcAddr(
     get_proc_addr: anytype,
     arg: anytype,
 ) GenericError!Delegate(name) {
-    return @ptrCast(
-        get_proc_addr(arg, name.ptr) orelse return error.LoaderFailed,
-    );
+    return @ptrCast(get_proc_addr(arg, name.ptr) orelse
+        return error.FunctionLoadFailed);
 }
 
 pub inline fn callError(
@@ -398,10 +455,12 @@ inline fn callResultInner(
     function: anytype,
     args: anytype,
 ) Result {
+    const F = @TypeOf(function);
+
     // check whether it's a pointer
-    const pointer_info = switch (@typeInfo(@TypeOf(function))) {
+    const pointer_info = switch (@typeInfo(F)) {
         .pointer => |ptr| ptr,
-        else => @compileError("not a function pointer"),
+        else => @compileError("expected function pointer, found " ++ @typeName(F)),
     };
 
     // check whether a function pointer and whether returns VkResult

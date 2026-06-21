@@ -12,7 +12,12 @@ pub const backend = switch (builtin.backend) {
 pub const GenericError = error{
     /// Allocation failed due to fragmented/lack of available memory.
     OutOfMemory,
-    LoaderFailed,
+
+    /// Failed to load core library (libvulkan, libgl, etc...).
+    LibraryLoadFailed,
+
+    /// Failed to load function from core library.
+    FunctionLoadFailed,
 };
 
 pub const Offset2D = struct { x: u32, y: u32 };

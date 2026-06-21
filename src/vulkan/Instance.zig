@@ -10,28 +10,23 @@ const Error = zora.Instance.Error;
 const GenericError = zora.GenericError;
 const Options = zora.Instance.Options;
 const Delegate = utils.Delegate;
+const DynLib = utils.DynLib;
 
 const GetInstanceProcAddr = Delegate("vkGetInstanceProcAddr");
 const DestroyDebugUtilsMessenger = Delegate("vkDestroyDebugUtilsMessengerEXT");
 
-const required_extensions = extensions ++ debug_extensions;
+const total_extensions = required_extensions.len + optional_extensions.len;
+const optional_extensions: []const [*:0]const u8 = optional_debug_extensions ++ optional_target_extensions;
 
-const library_name: [:0]const u8 = switch (zora.builtin.target) {
-    .win32 => "vulkan-1.dll",
-    .unix, .android => "libvulkan.so",
-    .macos => "libvulkan.dylib",
-};
-
-const extensions: []const [*:0]const u8 = &.{
+const required_extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SURFACE_EXTENSION_NAME,
 };
 
-const debug_extensions: []const [*:0]const u8 = switch (zora.builtin.debug) {
-    true => &.{vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME},
-    false => &.{},
+const optional_debug_extensions: []const [*:0]const u8 = &.{
+    vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
 };
 
-const optional_extensions: []const [*:0]const u8 = switch (zora.builtin.target) {
+const optional_target_extensions: []const [*:0]const u8 = switch (zora.builtin.target) {
     .win32 => &.{
         vk.VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
     },
@@ -74,77 +69,109 @@ const Vtable = utils.Vtable(&.{
     "vkQueuePresentKHR",
 });
 
-const Loader = switch (zora.builtin.target) {
-    // zig 0.16.0 removed windows from std.DynLib... Thanks, Andrew!
-    .win32 => struct {
-        const BOOL = c_int;
-        const HMODULE = ?*anyopaque;
-        const FARPROC = ?*const fn () callconv(.c) c_int;
+const Diagnostic = struct {
+    // configure create info for diagnostic logger
+    pub const create_info = vk.VkDebugUtilsMessengerCreateInfoEXT{
+        .sType = vk.VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
 
-        extern fn LoadLibraryA(lpLibFileName: [*:0]const u8) callconv(.c) HMODULE;
-        extern fn GetProcAddress(hModule: HMODULE, lpProcName: [*:0]const u8) callconv(.c) FARPROC;
-        extern fn FreeLibrary(hLibModule: HMODULE) callconv(.c) BOOL;
+        .messageSeverity = vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+            vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+            vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+            vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
 
-        hmodule: HMODULE,
+        .messageType = vk.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+            vk.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT |
+            // only enable verbose logging in debug
+            (vk.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT * @intFromBool(zora.builtin.debug)),
 
-        pub fn open() GenericError!Loader {
-            return .{
-                .hmodule = LoadLibraryA(
-                    library_name.ptr,
-                ) orelse return error.LoaderFailed,
-            };
+        .pfnUserCallback = messageCallback,
+    };
+
+    instance: vk.VkInstance,
+    handle: vk.VkDebugUtilsMessengerEXT,
+    destroy_messenger: DestroyDebugUtilsMessenger,
+
+    pub fn create(
+        instance: vk.VkInstance,
+        get_proc_addr: GetInstanceProcAddr,
+    ) ?Diagnostic {
+        const create_messenger = utils.getProcAddr(
+            "vkCreateDebugUtilsMessengerEXT",
+            get_proc_addr,
+            instance,
+        ) catch return null;
+
+        const destroy_messenger = utils.getProcAddr(
+            "vkDestroyDebugUtilsMessengerEXT",
+            get_proc_addr,
+            instance,
+        ) catch return null;
+
+        var handle: vk.VkDebugUtilsMessengerEXT = null;
+        const result = utils.callResult(
+            create_messenger,
+            .{ instance, &create_info, null, &handle },
+        );
+
+        return if (result == .success) .{
+            .instance = instance,
+            .handle = handle,
+            .destroy_messenger = destroy_messenger,
+        } else null;
+    }
+
+    pub fn destroy(self: *const Diagnostic) void {
+        self.destroy_messenger(self.instance, self.handle, null);
+    }
+
+    fn messageCallback(
+        severity: vk.VkDebugUtilsMessageSeverityFlagBitsEXT,
+        _: vk.VkDebugUtilsMessageTypeFlagsEXT,
+        message_data: ?*const vk.VkDebugUtilsMessengerCallbackDataEXT,
+        _: ?*anyopaque,
+    ) callconv(.c) vk.VkBool32 {
+        const scoped = std.log.scoped(.diagnostic);
+        const data = message_data orelse return vk.VK_FALSE;
+
+        switch (severity) {
+            vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
+            => scoped.debug("{s}", .{std.mem.sliceTo(data.pMessage, 0)}),
+
+            vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT,
+            => scoped.info("{s}", .{std.mem.sliceTo(data.pMessage, 0)}),
+
+            vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT,
+            => scoped.warn("{s}", .{std.mem.sliceTo(data.pMessage, 0)}),
+
+            vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+            => scoped.err("{s}", .{std.mem.sliceTo(data.pMessage, 0)}),
+
+            else => unreachable,
         }
 
-        pub fn close(self: *Loader) void {
-            _ = FreeLibrary(self.hmodule);
-        }
-
-        pub fn lookup(self: *Loader, comptime T: type, name: [:0]const u8) ?T {
-            return @ptrCast(GetProcAddress(self.hmodule, name.ptr));
-        }
-    },
-
-    else => struct {
-        handle: std.DynLib,
-
-        pub fn open() GenericError!Loader {
-            return .{
-                .handle = std.DynLib.open(
-                    library_name,
-                ) catch return error.LoaderFailed,
-            };
-        }
-
-        pub fn close(self: *Loader) void {
-            self.handle.close();
-        }
-
-        pub fn lookup(self: *Loader, comptime T: type, name: [:0]const u8) ?T {
-            return @ptrCast(self.handle.lookup(T, name));
-        }
-    },
+        return vk.VK_FALSE;
+    }
 };
 
 vtable: Vtable,
+diagnostic: ?Diagnostic,
 handle: vk.VkInstance,
-messenger_handle: vk.VkDebugUtilsMessengerEXT,
 get_proc_addr: GetInstanceProcAddr,
-destroy_messenger: DestroyDebugUtilsMessenger,
-loader: Loader,
+loader: DynLib,
 
 pub fn create(_: Options) Error!Self {
-    const max_properties = 1024;
+    const max_extensions: u32 = 1024;
 
     // load vulkan lib
     log.info("loading vulkan lib ...", .{});
-    var loader = try Loader.open();
+    var loader = try DynLib.open();
     errdefer loader.close();
 
     log.debug("loading essential delegates ...", .{});
-    const get_proc_addr = loader.lookup(
+    const get_proc_addr = try loader.lookup(
         GetInstanceProcAddr,
         "vkGetInstanceProcAddr",
-    ) orelse return error.LoaderFailed;
+    );
 
     const enum_extensions = try utils.getProcAddr(
         "vkEnumerateInstanceExtensionProperties",
@@ -152,24 +179,18 @@ pub fn create(_: Options) Error!Self {
         null,
     );
 
-    const create_instance = try utils.getProcAddr(
-        "vkCreateInstance",
-        get_proc_addr,
-        null,
+    // query all extensions
+    var query_buffer: [max_extensions]vk.VkExtensionProperties = undefined;
+    var query_count = max_extensions;
+    try utils.callError(
+        .default,
+        enum_extensions,
+        error.InstanceCreationFailed,
+        .{ null, &query_count, &query_buffer },
     );
 
-    var query_buffer: [max_properties]vk.VkExtensionProperties = undefined;
-    var query_count: u32 = max_properties;
-
-    // query all extensions
-    try utils.callError(.default, enum_extensions, error.InstanceCreationFailed, .{
-        null,
-        &query_count,
-        &query_buffer,
-    });
-
     // create initial extension list
-    var ext_buffer: [optional_extensions.len + required_extensions.len][*:0]const u8 = undefined;
+    var ext_buffer: [total_extensions][*:0]const u8 = undefined;
     var ext_count = required_extensions.len;
     @memcpy(ext_buffer[0..required_extensions.len], required_extensions);
 
@@ -183,14 +204,26 @@ pub fn create(_: Options) Error!Self {
     for (optional_extensions) |ext| {
         for (0..query_count) |i| {
             const name: [*:0]const u8 = @ptrCast(&query_buffer[i].extensionName);
-            if (std.mem.orderZ(u8, ext, name) != .eq) continue;
 
-            log.info(" \"{s}\"", .{name});
-            ext_buffer[ext_count] = ext;
-            ext_count += 1;
-            break;
+            if (std.mem.orderZ(u8, ext, name) == .eq) {
+                log.info(" \"{s}\"", .{name});
+                ext_buffer[ext_count] = ext;
+                ext_count += 1;
+            }
         }
     }
+
+    // check if diagnostic logging is supported
+    const enable_diag = zora.builtin.debug and blk: {
+        for (0..ext_count) |i| {
+            if (std.mem.orderZ(
+                u8,
+                ext_buffer[i],
+                vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+            ) == .eq) break :blk true;
+        }
+        break :blk false;
+    };
 
     const version = vk.VK_MAKE_VERSION(
         zora.builtin.version.major,
@@ -207,28 +240,12 @@ pub fn create(_: Options) Error!Self {
         .apiVersion = vk.VK_API_VERSION_1_0,
     };
 
-    // configure create info for diagnostic logger
-    const messenger_create_info = vk.VkDebugUtilsMessengerCreateInfoEXT{
-        .sType = vk.VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-
-        .messageSeverity = vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-            vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
-            vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-            vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-
-        .messageType = vk.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-            vk.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT |
-            switch (zora.builtin.debug) {
-                true => vk.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT,
-                false => 0, // we don't want verbose logs when in ReleaseSafe...
-            },
-
-        .pfnUserCallback = diagnosticCallback,
-    };
-
     var create_info = vk.VkInstanceCreateInfo{
         .sType = vk.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pNext = if (zora.builtin.debug) @ptrCast(&messenger_create_info) else null,
+
+        // enable diagnostic if supported
+        .pNext = if (enable_diag) @ptrCast(&Diagnostic.create_info) else null,
+
         .pApplicationInfo = &app_info,
         .ppEnabledLayerNames = validation_layers.ptr,
         .ppEnabledExtensionNames = &ext_buffer,
@@ -240,9 +257,15 @@ pub fn create(_: Options) Error!Self {
     log.debug("creating vulkan instance ...", .{});
     var handle: vk.VkInstance = null;
 
-    blk: while (true) {
+    const create_instance = try utils.getProcAddr(
+        "vkCreateInstance",
+        get_proc_addr,
+        null,
+    );
+
+    while (true) {
         switch (utils.callResult(create_instance, .{ &create_info, null, &handle })) {
-            .success => break :blk,
+            .success => break,
 
             .layer_not_present => {
                 log.warn("one or more validation layer(s) not supported, disabling all of them.", .{});
@@ -262,22 +285,13 @@ pub fn create(_: Options) Error!Self {
     );
     errdefer destroy_instance(handle, null);
 
-    // try to setup a diagnostic messenger
-    var messenger_handle: vk.VkDebugUtilsMessengerEXT = null;
-    const destroy_messenger = if (zora.builtin.debug) try setupDiagnosticMessenger(
-        handle,
-        get_proc_addr,
-        &messenger_create_info,
-        &messenger_handle,
-    ) else null;
-
     return .{
+        .diagnostic = Diagnostic.create(handle, get_proc_addr),
+
         // load virtual functions
         .vtable = try Vtable.load(get_proc_addr, handle),
 
         .handle = handle,
-        .messenger_handle = messenger_handle,
-        .destroy_messenger = destroy_messenger,
         .loader = loader,
         .get_proc_addr = get_proc_addr,
     };
@@ -286,11 +300,9 @@ pub fn create(_: Options) Error!Self {
 pub fn destroy(self: *Self) void {
     log.debug("destroying vulkan instance ...", .{});
 
-    if (zora.builtin.debug) self.destroy_messenger(
-        self.handle,
-        self.messenger_handle,
-        null,
-    );
+    if (self.diagnostic) |*diag| {
+        diag.destroy();
+    }
 
     self.vtable.call("vkDestroyInstance", .{ self.handle, null });
     self.loader.close();
@@ -305,60 +317,4 @@ pub fn getProcAddr(
         self.get_proc_addr,
         self.handle,
     );
-}
-
-fn setupDiagnosticMessenger(
-    instance: vk.VkInstance,
-    get_proc_addr: GetInstanceProcAddr,
-    create_info: *const vk.VkDebugUtilsMessengerCreateInfoEXT,
-    handle: *vk.VkDebugUtilsMessengerEXT,
-) Error!DestroyDebugUtilsMessenger {
-    const create_messenger = try utils.getProcAddr(
-        "vkCreateDebugUtilsMessengerEXT",
-        get_proc_addr,
-        instance,
-    );
-
-    const destroy_messenger = try utils.getProcAddr(
-        "vkDestroyDebugUtilsMessengerEXT",
-        get_proc_addr,
-        instance,
-    );
-
-    try utils.callError(
-        .default,
-        create_messenger,
-        error.InstanceCreationFailed,
-        .{ instance, create_info, null, handle },
-    );
-
-    return destroy_messenger;
-}
-
-fn diagnosticCallback(
-    severity: vk.VkDebugUtilsMessageSeverityFlagBitsEXT,
-    _: vk.VkDebugUtilsMessageTypeFlagsEXT,
-    message_data: ?*const vk.VkDebugUtilsMessengerCallbackDataEXT,
-    _: ?*anyopaque,
-) callconv(.c) vk.VkBool32 {
-    const scoped = std.log.scoped(.diagnostic);
-    const data = message_data orelse return vk.VK_FALSE;
-
-    switch (severity) {
-        vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
-        => scoped.debug("{s}", .{std.mem.sliceTo(data.pMessage, 0)}),
-
-        vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT,
-        => scoped.info("{s}", .{std.mem.sliceTo(data.pMessage, 0)}),
-
-        vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT,
-        => scoped.warn("{s}", .{std.mem.sliceTo(data.pMessage, 0)}),
-
-        vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-        => scoped.err("{s}", .{std.mem.sliceTo(data.pMessage, 0)}),
-
-        else => unreachable,
-    }
-
-    return vk.VK_FALSE;
 }
