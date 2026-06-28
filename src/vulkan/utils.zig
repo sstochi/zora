@@ -4,12 +4,14 @@ const builtin = @import("builtin");
 const zora = @import("../root.zig");
 const GenericError = zora.GenericError;
 
-const log = std.log.scoped(.utils);
+const log = std.log.scoped(.vulkan_utils);
 
-const library_name: [:0]const u8 = switch (zora.builtin.target) {
-    .win32 => "vulkan-1.dll",
-    .unix, .android => "libvulkan.so",
-    .macos => "libvulkan.dylib",
+pub const ErrorPolicy = enum {
+    /// Results other than `success` are treated like errors.
+    default,
+
+    /// Results other than `success` that aren't `fatal` are logged and ignored.
+    relaxed,
 };
 
 /// A collection of VkResult values, including errors.
@@ -50,14 +52,6 @@ pub const Result = enum(c_int) {
     pub fn fatal(self: Result) bool {
         return @intFromEnum(self) < 0;
     }
-};
-
-pub const ErrorPolicy = enum {
-    /// Results other than `success` are treated like errors.
-    default,
-
-    /// Results other than `success` that aren't `fatal` are logged and ignored.
-    relaxed,
 };
 
 pub const Format = enum(c_int) {
@@ -290,10 +284,10 @@ pub const DynLib = switch (zora.builtin.target) {
 
         hmodule: HMODULE,
 
-        pub fn open() GenericError!DynLib {
+        pub fn open(name: [:0]const u8) GenericError!DynLib {
             return .{
                 .hmodule = LoadLibraryA(
-                    library_name.ptr,
+                    name.ptr,
                 ) orelse return error.LibraryLoadFailed,
             };
         }
@@ -311,10 +305,10 @@ pub const DynLib = switch (zora.builtin.target) {
     else => struct {
         handle: std.DynLib,
 
-        pub fn open() GenericError!DynLib {
+        pub fn open(name: [:0]const u8) GenericError!DynLib {
             return .{
                 .handle = std.DynLib.open(
-                    library_name,
+                    name,
                 ) catch return error.LibraryLoadFailed,
             };
         }
@@ -343,7 +337,6 @@ pub fn Vtable(comptime delegates: []const [:0]const u8) type {
     inline for (delegates, 0..) |name, i| types[i] = Delegate(name);
 
     const InnerType = @Struct(.auto, null, delegates, &types, &attrs);
-
     return struct {
         const Impl = @This();
 

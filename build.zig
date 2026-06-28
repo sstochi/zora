@@ -23,7 +23,6 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
-        .link_libc = true,
 
         .imports = &.{
             .{ .name = "manifest", .module = b.createModule(.{ .root_source_file = b.path("build.zig.zon") }) },
@@ -41,6 +40,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .imports = &.{.{ .name = "zora", .module = zora }},
+            .link_libc = true,
         }),
     });
 

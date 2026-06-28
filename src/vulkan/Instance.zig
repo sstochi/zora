@@ -16,14 +16,10 @@ const GetInstanceProcAddr = Delegate("vkGetInstanceProcAddr");
 const DestroyDebugUtilsMessenger = Delegate("vkDestroyDebugUtilsMessengerEXT");
 
 const total_extensions = required_extensions.len + optional_extensions.len;
-const optional_extensions: []const [*:0]const u8 = optional_debug_extensions ++ optional_target_extensions;
+const optional_extensions = optional_target_extensions ++ optional_debug_extensions;
 
 const required_extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SURFACE_EXTENSION_NAME,
-};
-
-const optional_debug_extensions: []const [*:0]const u8 = &.{
-    vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
 };
 
 const optional_target_extensions: []const [*:0]const u8 = switch (zora.builtin.target) {
@@ -44,9 +40,19 @@ const optional_target_extensions: []const [*:0]const u8 = switch (zora.builtin.t
     else => @compileError("unknown os"),
 };
 
+const optional_debug_extensions: []const [*:0]const u8 = &.{
+    vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+};
+
 const validation_layers: []const [*:0]const u8 = switch (zora.builtin.debug) {
     true => &.{"VK_LAYER_KHRONOS_validation"},
     false => &.{},
+};
+
+const library_name: [:0]const u8 = switch (zora.builtin.target) {
+    .win32 => "vulkan-1.dll",
+    .unix, .android => "libvulkan.so",
+    .macos => "libvulkan.dylib",
 };
 
 const Vtable = utils.Vtable(&.{
@@ -163,7 +169,7 @@ pub fn create(_: Options) Error!Self {
     const max_extensions: u32 = 1024;
 
     log.info("loading vulkan lib ...", .{});
-    var loader = try DynLib.open();
+    var loader = try DynLib.open(library_name);
     errdefer loader.close();
 
     log.debug("loading essential delegates ...", .{});
@@ -174,6 +180,12 @@ pub fn create(_: Options) Error!Self {
 
     const enum_extensions = try utils.getProcAddr(
         "vkEnumerateInstanceExtensionProperties",
+        get_proc_addr,
+        null,
+    );
+
+    const create_instance = try utils.getProcAddr(
+        "vkCreateInstance",
         get_proc_addr,
         null,
     );
@@ -194,33 +206,34 @@ pub fn create(_: Options) Error!Self {
     @memcpy(ext_buffer[0..required_extensions.len], required_extensions);
 
     log.info("required extensions:", .{});
-    for (required_extensions) |ext| {
+    inline for (required_extensions) |ext| {
         log.info(" \"{s}\"", .{std.mem.span(ext)});
     }
 
     // enable supported optional extensions
     log.info("supported optional extensions:", .{});
-    for (optional_extensions) |ext| {
+    inline for (optional_extensions) |ext| {
         for (0..query_count) |i| {
-            const name: [*:0]const u8 = @ptrCast(&query_buffer[i].extensionName);
+            const name: [*:0]const u8 = @ptrCast(
+                &query_buffer[i].extensionName,
+            );
 
             if (std.mem.orderZ(u8, ext, name) == .eq) {
                 log.info(" \"{s}\"", .{name});
                 ext_buffer[ext_count] = ext;
                 ext_count += 1;
+                break;
             }
         }
     }
 
     // check if diagnostic logging is supported
     const enable_diag = zora.builtin.debug and blk: {
-        for (0..ext_count) |i| {
-            if (std.mem.orderZ(
-                u8,
-                ext_buffer[i],
-                vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
-            ) == .eq) break :blk true;
-        }
+        for (0..ext_count) |i| if (std.mem.orderZ(
+            u8,
+            ext_buffer[i],
+            vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+        ) == .eq) break :blk true;
         break :blk false;
     };
 
@@ -243,7 +256,9 @@ pub fn create(_: Options) Error!Self {
         .sType = vk.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 
         // enable diagnostic if supported
-        .pNext = if (enable_diag) @ptrCast(&Diagnostic.create_info) else null,
+        .pNext = if (enable_diag) @ptrCast(
+            &Diagnostic.create_info,
+        ) else null,
 
         .pApplicationInfo = &app_info,
         .ppEnabledLayerNames = validation_layers.ptr,
@@ -256,22 +271,21 @@ pub fn create(_: Options) Error!Self {
     log.debug("creating vulkan instance ...", .{});
     var handle: vk.VkInstance = null;
 
-    const create_instance = try utils.getProcAddr(
-        "vkCreateInstance",
-        get_proc_addr,
-        null,
-    );
-
     while (true) {
-        switch (utils.callResult(create_instance, .{ &create_info, null, &handle })) {
-            .success => break,
+        const result = utils.callResult(create_instance, .{
+            &create_info,
+            null,
+            &handle,
+        });
 
+        switch (result) {
             .layer_not_present => {
                 log.warn("one or more validation layer(s) not supported, disabling all of them.", .{});
                 create_info.ppEnabledLayerNames = null;
                 create_info.enabledLayerCount = 0;
             },
 
+            .success => break,
             else => return error.InstanceCreationFailed,
         }
     }
