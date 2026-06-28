@@ -229,11 +229,13 @@ pub fn create(_: Options) Error!Self {
 
     // check if diagnostic logging is supported
     const enable_diag = zora.builtin.debug and blk: {
-        for (0..ext_count) |i| if (std.mem.orderZ(
-            u8,
-            ext_buffer[i],
-            vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
-        ) == .eq) break :blk true;
+        for (0..ext_count) |i| {
+            if (std.mem.orderZ(
+                u8,
+                ext_buffer[i],
+                vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+            ) == .eq) break :blk true;
+        }
         break :blk false;
     };
 
