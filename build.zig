@@ -6,12 +6,17 @@ const BackendType = enum {
 };
 
 pub fn build(b: *std.Build) void {
+    const backend = b.option(
+        BackendType,
+        "zora_backend",
+        "Selects zora's backend.",
+    ) orelse .vulkan;
+
     const options = b.addOptions();
+    options.addOption(BackendType, "backend", backend);
+
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-
-    const backend = b.option(BackendType, "zora_backend", "Selects zora's backend.") orelse .vulkan;
-    options.addOption(BackendType, "backend", backend);
 
     const translate_headers = b.addTranslateC(.{
         .optimize = optimize,
@@ -32,10 +37,23 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
 
         .imports = &.{
-            .{ .name = "manifest", .module = b.createModule(.{ .root_source_file = b.path("build.zig.zon") }) },
             .{ .name = "options", .module = options.createModule() },
-            .{ .name = @tagName(backend), .module = translate_headers.createModule() },
+
+            .{
+                .name = "manifest",
+                .module = b.createModule(.{
+                    .root_source_file = b.path("build.zig.zon"),
+                }),
+            },
+
+            .{
+                .name = @tagName(backend),
+                .module = translate_headers.createModule(),
+            },
         },
+
+        // On Windows, linking libc is always required.
+        .link_libc = target.result.os.tag == .windows,
     });
 
     const example = b.addExecutable(.{
@@ -50,26 +68,8 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
-
-    example.root_module.dwarf_format = .@"32";
+    example.root_module.dwarf_format = .@"64";
     example.root_module.linkSystemLibrary("sdl3", .{ .needed = true });
-
-    if (target.result.os.tag == .windows) {
-        const win_libs = [_][]const u8{
-            "winmm",
-            "ole32",
-            "oleaut32",
-            "setupapi",
-            "cfgmgr32",
-            "gdi32",
-            "imm32",
-            "version",
-        };
-
-        for (win_libs) |lib| {
-            example.root_module.linkSystemLibrary(lib, .{ .needed = true });
-        }
-    }
 
     b.installArtifact(example);
 

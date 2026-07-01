@@ -7,7 +7,6 @@ const log = std.log.scoped(.loader);
 /// Platform-agnostic replacement for `std.DynLib`.
 /// Exists mainly due to Windows implementation being removed.
 pub const DynLib = switch (zora.builtin.target) {
-    // zig 0.16.0 removed windows from std.DynLib... Thanks, Andrew!
     .win32 => struct {
         const BOOL = c_int;
         const HMODULE = ?*anyopaque;
@@ -31,7 +30,11 @@ pub const DynLib = switch (zora.builtin.target) {
             _ = FreeLibrary(self.hmodule);
         }
 
-        pub fn lookup(self: *DynLib, comptime T: type, name: [:0]const u8) GenericError!T {
+        pub fn lookup(
+            self: *DynLib,
+            comptime T: type,
+            name: [:0]const u8,
+        ) GenericError!T {
             return @ptrCast(GetProcAddress(self.hmodule, name.ptr) orelse
                 return error.FunctionLoadFailed);
         }
@@ -52,7 +55,11 @@ pub const DynLib = switch (zora.builtin.target) {
             self.handle.close();
         }
 
-        pub fn lookup(self: *DynLib, comptime T: type, name: [:0]const u8) GenericError!T {
+        pub fn lookup(
+            self: *DynLib,
+            comptime T: type,
+            name: [:0]const u8,
+        ) GenericError!T {
             return @ptrCast(self.handle.lookup(T, name) orelse
                 return error.FunctionLoadFailed);
         }

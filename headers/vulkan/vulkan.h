@@ -1,6 +1,6 @@
 // Replacement for vulkan's
-#include "vk_platform.h"
-#include "vulkan_core.h"
+#include <vulkan/vk_platform.h>
+#include <vulkan/vulkan_core.h>
 
 #if defined(_WIN32)
     typedef unsigned long DWORD;
@@ -12,12 +12,12 @@
     typedef struct _HWND* HWND;
     typedef struct _SECURITY_ATTRIBUTES SECURITY_ATTRIBUTES;
 
-    #include "vulkan_win32.h"
+    #include <vulkan/vulkan_win32.h>
 #elif defined(__ANDROID__)
     struct ANativeWindow;
     struct AHardwareBuffer;
 
-    #include "vulkan_android.h"
+    #include <vulkan/vulkan_android.h>
 #elif defined(__unix__)
     #include <stdint.h>
 
@@ -30,7 +30,7 @@
     struct wl_display;
     struct wl_surface;
 
-    #include "vulkan_xcb.h"
-    #include "vulkan_wayland.h"
-    #include "vulkan_xlib.h"
+    #include <vulkan/vulkan_xcb.h>
+    #include <vulkan/vulkan_wayland.h>
+    #include <vulkan/vulkan_xlib.h>
 #endif
