@@ -16,8 +16,15 @@ pub fn build(b: *std.Build) void {
     const translate_headers = b.addTranslateC(.{
         .optimize = optimize,
         .target = target,
-        .root_source_file = b.path(b.fmt("headers/{s}.h", .{@tagName(backend)})),
+        .root_source_file = b.path(b.fmt("headers/{s}/{s}.h", .{
+            @tagName(backend),
+            @tagName(backend),
+        })),
     });
+
+    translate_headers.addIncludePath(b.path(b.fmt("headers/{s}", .{
+        @tagName(backend),
+    })));
 
     const zora = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),

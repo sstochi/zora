@@ -1,8 +1,13 @@
 const std = @import("std");
 const vk = @import("vulkan");
 const builtin = @import("builtin");
+
 const zora = @import("../root.zig");
+const loader = @import("../loader.zig");
+
 const GenericError = zora.GenericError;
+const VtableInner = loader.VtableInner;
+const DelegateReturnType = loader.DelegateReturnType;
 
 const log = std.log.scoped(.vulkan_utils);
 
@@ -34,6 +39,7 @@ pub const Result = enum(c_int) {
     incompatible_driver = -9,
     too_many_objects = -10,
     format_not_supported = -11,
+
     fragmented_pool = -12,
     unknown = -13,
 
@@ -271,88 +277,25 @@ pub const PresentMode = enum(c_int) {
     _,
 };
 
-pub const DynLib = switch (zora.builtin.target) {
-    // zig 0.16.0 removed windows from std.DynLib... Thanks, Andrew!
-    .win32 => struct {
-        const BOOL = c_int;
-        const HMODULE = ?*anyopaque;
-        const FARPROC = ?*const fn () callconv(.c) c_int;
-
-        extern fn LoadLibraryA(lpLibFileName: [*:0]const u8) callconv(.c) HMODULE;
-        extern fn GetProcAddress(hModule: HMODULE, lpProcName: [*:0]const u8) callconv(.c) FARPROC;
-        extern fn FreeLibrary(hLibModule: HMODULE) callconv(.c) BOOL;
-
-        hmodule: HMODULE,
-
-        pub fn open(name: [:0]const u8) GenericError!DynLib {
-            return .{
-                .hmodule = LoadLibraryA(
-                    name.ptr,
-                ) orelse return error.LibraryLoadFailed,
-            };
-        }
-
-        pub fn close(self: *DynLib) void {
-            _ = FreeLibrary(self.hmodule);
-        }
-
-        pub fn lookup(self: *DynLib, comptime T: type, name: [:0]const u8) GenericError!T {
-            return @ptrCast(GetProcAddress(self.hmodule, name.ptr) orelse
-                return error.FunctionLoadFailed);
-        }
-    },
-
-    else => struct {
-        handle: std.DynLib,
-
-        pub fn open(name: [:0]const u8) GenericError!DynLib {
-            return .{
-                .handle = std.DynLib.open(
-                    name,
-                ) catch return error.LibraryLoadFailed,
-            };
-        }
-
-        pub fn close(self: *DynLib) void {
-            self.handle.close();
-        }
-
-        pub fn lookup(self: *DynLib, comptime T: type, name: [:0]const u8) GenericError!T {
-            return @ptrCast(self.handle.lookup(T, name) orelse
-                return error.FunctionLoadFailed);
-        }
-    },
-};
-
 /// Vulkan function pointer.
 pub fn Delegate(comptime name: []const u8) type {
     return *const @TypeOf(@field(vk, name));
 }
 
 /// Comptime vulkan delegate loader with no runtime overhead.
+/// If necessary, raw function pointers can be accessed using `inner` field.
 pub fn Vtable(comptime delegates: []const [:0]const u8) type {
-    const attrs: [delegates.len]std.builtin.Type.StructField.Attributes = @splat(.{});
+    const InnerType = loader.VtableInner(Delegate, delegates);
 
-    var types: [delegates.len]type = undefined;
-    inline for (delegates, 0..) |name, i| types[i] = Delegate(name);
-
-    const InnerType = @Struct(.auto, null, delegates, &types, &attrs);
     return struct {
-        const Impl = @This();
-
-        fn ReturnType(comptime name: []const u8) type {
-            const pointer_info = @typeInfo(Delegate(name)).pointer;
-            // zig: "TODO change the language spec to make this not optional."
-            return @typeInfo(pointer_info.child).@"fn".return_type.?;
-        }
+        const Self = @This();
 
         inner: InnerType,
 
-        /// TODO change the language spec to make this not optional.
         pub fn load(
             get_proc_addr: anytype,
             handle: anytype,
-        ) GenericError!Impl {
+        ) GenericError!Self {
             var inner: InnerType = undefined;
             log.debug("loading vtable ({} total):", .{delegates.len});
 
@@ -365,15 +308,15 @@ pub fn Vtable(comptime delegates: []const [:0]const u8) type {
         }
 
         pub fn call(
-            self: *const Impl,
+            self: *const Self,
             comptime name: []const u8,
             args: anytype,
-        ) ReturnType(name) {
+        ) DelegateReturnType(Delegate, name) {
             return @call(.auto, @field(self.inner, name), args);
         }
 
         pub fn callResult(
-            self: *const Impl,
+            self: *const Self,
             comptime name: []const u8,
             args: anytype,
         ) Result {
@@ -381,7 +324,7 @@ pub fn Vtable(comptime delegates: []const [:0]const u8) type {
         }
 
         pub fn callError(
-            self: *const Impl,
+            self: *const Self,
             comptime policy: ErrorPolicy,
             comptime name: []const u8,
             err: anytype,

@@ -1,7 +1,9 @@
 const std = @import("std");
 const vk = @import("vulkan");
 const utils = @import("utils.zig");
+
 const zora = @import("../root.zig");
+const loader = @import("../loader.zig");
 
 const log = std.log.scoped(.instance);
 
@@ -10,7 +12,7 @@ const Error = zora.Instance.Error;
 const GenericError = zora.GenericError;
 const Options = zora.Instance.Options;
 const Delegate = utils.Delegate;
-const DynLib = utils.DynLib;
+const DynLib = loader.DynLib;
 
 const GetInstanceProcAddr = Delegate("vkGetInstanceProcAddr");
 const DestroyDebugUtilsMessenger = Delegate("vkDestroyDebugUtilsMessengerEXT");
@@ -163,17 +165,17 @@ vtable: Vtable,
 diagnostic: ?Diagnostic,
 handle: vk.VkInstance,
 get_proc_addr: GetInstanceProcAddr,
-loader: DynLib,
+dynlib: DynLib,
 
 pub fn create(_: Options) Error!Self {
     const max_extensions: u32 = 1024;
 
     log.info("loading vulkan lib ...", .{});
-    var loader = try DynLib.open(library_name);
-    errdefer loader.close();
+    var dynlib = try DynLib.open(library_name);
+    errdefer dynlib.close();
 
     log.debug("loading essential delegates ...", .{});
-    const get_proc_addr = try loader.lookup(
+    const get_proc_addr = try dynlib.lookup(
         GetInstanceProcAddr,
         "vkGetInstanceProcAddr",
     );
@@ -305,7 +307,7 @@ pub fn create(_: Options) Error!Self {
         .vtable = try Vtable.load(get_proc_addr, handle),
 
         .handle = handle,
-        .loader = loader,
+        .dynlib = dynlib,
         .get_proc_addr = get_proc_addr,
     };
 }
@@ -317,7 +319,7 @@ pub fn destroy(self: *Self) void {
 
     log.debug("destroying vulkan instance ...", .{});
     self.vtable.call("vkDestroyInstance", .{ self.handle, null });
-    self.loader.close();
+    self.dynlib.close();
 }
 
 pub fn getProcAddr(
