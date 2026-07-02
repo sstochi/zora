@@ -1,7 +1,6 @@
 const std = @import("std");
 const zora = @import("zora");
 const sdl = @cImport(@cInclude("SDL3/SDL.h"));
-const builtin = @import("builtin");
 
 pub fn main(_: std.process.Init) !void {
     if (!sdl.SDL_Init(sdl.SDL_INIT_VIDEO)) return error.SDLFailed;
@@ -14,7 +13,7 @@ pub fn main(_: std.process.Init) !void {
     var instance = try zora.Instance.create(.{});
     defer instance.destroy();
 
-    var adapter = try outer: switch (zora.builtin.target) {
+    var adapter = try outer: switch (zora.config.platform) {
         .win32 => {
             const hinstance = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, null);
             const hwnd = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null);

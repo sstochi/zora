@@ -1,5 +1,6 @@
 const std = @import("std");
 const vk = @import("vulkan");
+const config = @import("config");
 const utils = @import("utils.zig");
 const zora = @import("../root.zig");
 
@@ -326,7 +327,7 @@ fn createSurface(
 ) Error!vk.VkSurfaceKHR {
     log.debug("creating vulkan surface ...", .{});
 
-    return try switch (zora.builtin.target) {
+    return try switch (config.platform) {
         .win32 => createSurfaceGeneric(
             "vkCreateWin32SurfaceKHR",
             instance,

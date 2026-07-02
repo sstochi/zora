@@ -1,5 +1,6 @@
 const std = @import("std");
 const vk = @import("vulkan");
+const config = @import("config");
 const utils = @import("utils.zig");
 
 const zora = @import("../root.zig");
@@ -24,7 +25,7 @@ const required_extensions: []const [*:0]const u8 = &.{
     vk.VK_KHR_SURFACE_EXTENSION_NAME,
 };
 
-const optional_target_extensions: []const [*:0]const u8 = switch (zora.builtin.target) {
+const optional_target_extensions: []const [*:0]const u8 = switch (config.platform) {
     .win32 => &.{
         vk.VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
     },
@@ -46,12 +47,12 @@ const optional_debug_extensions: []const [*:0]const u8 = &.{
     vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
 };
 
-const validation_layers: []const [*:0]const u8 = switch (zora.builtin.debug) {
+const validation_layers: []const [*:0]const u8 = switch (config.debug) {
     true => &.{"VK_LAYER_KHRONOS_validation"},
     false => &.{},
 };
 
-const library_name: [:0]const u8 = switch (zora.builtin.target) {
+const library_name: [:0]const u8 = switch (config.platform) {
     .win32 => "vulkan-1.dll",
     .unix, .android => "libvulkan.so",
     .macos => "libvulkan.dylib",
@@ -90,7 +91,7 @@ const Diagnostic = struct {
         .messageType = vk.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
             vk.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT |
             // only enable verbose logging in debug
-            (vk.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT * @intFromBool(zora.builtin.debug)),
+            (vk.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT * @intFromBool(config.debug)),
 
         .pfnUserCallback = messageCallback,
     };
@@ -230,7 +231,7 @@ pub fn create(_: Options) Error!Self {
     }
 
     // check if diagnostic logging is supported
-    const enable_diag = zora.builtin.debug and blk: {
+    const enable_diag = config.debug and blk: {
         for (0..ext_count) |i| {
             if (std.mem.orderZ(
                 u8,
@@ -242,9 +243,9 @@ pub fn create(_: Options) Error!Self {
     };
 
     const version = vk.VK_MAKE_VERSION(
-        zora.builtin.version.major,
-        zora.builtin.version.minor,
-        zora.builtin.version.patch,
+        config.version.major,
+        config.version.minor,
+        config.version.patch,
     );
 
     const app_info = vk.VkApplicationInfo{

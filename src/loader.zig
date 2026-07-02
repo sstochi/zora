@@ -1,4 +1,5 @@
 const std = @import("std");
+const config = @import("config");
 const zora = @import("root.zig");
 const GenericError = zora.GenericError;
 
@@ -6,7 +7,7 @@ const log = std.log.scoped(.loader);
 
 /// Platform-agnostic replacement for `std.DynLib`.
 /// Exists mainly due to Windows implementation being removed.
-pub const DynLib = switch (zora.builtin.target) {
+pub const DynLib = switch (config.platform) {
     .win32 => struct {
         const BOOL = c_int;
         const HMODULE = ?*anyopaque;

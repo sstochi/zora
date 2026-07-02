@@ -1,10 +1,10 @@
 const std = @import("std");
 
-pub const builtin = @import("builtin.zig");
+pub const config = @import("config");
 /// A collection of types that are safe to use inside vertex and uniform data.
 pub const pod = @import("pod.zig");
 
-pub const backend = switch (builtin.backend) {
+pub const backend = switch (config.backend) {
     .vulkan => @import("vulkan/backend.zig"),
     else => @compileError("unknown backend"),
 };
@@ -70,7 +70,7 @@ pub const Topology = enum {
     triangle_strip,
 };
 
-pub const WindowInfo = switch (builtin.target) {
+pub const WindowInfo = switch (config.platform) {
     .win32 => struct {
         hinstance: ?*anyopaque,
         hwnd: ?*anyopaque,

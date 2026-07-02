@@ -1,22 +1,55 @@
 const std = @import("std");
+const manifest = @import("build.zig.zon");
 
-const BackendType = enum {
+pub const Platform = enum {
+    /// Linux, FreeBSD, OpenBSD, NetBSD
+    unix,
+    /// Google Android
+    android,
+    /// Microsoft Windows
+    win32,
+    /// Apple MacOS
+    macos,
+};
+
+const Backend = enum {
     vulkan,
     opengl,
 };
 
-pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
-
+pub fn build(b: *std.Build) !void {
     const backend = b.option(
-        BackendType,
+        Backend,
         "zora_backend",
         "Selects zora's backend.",
     ) orelse .vulkan;
 
-    const options = b.addOptions();
-    options.addOption(BackendType, "backend", backend);
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    const platform: Platform = switch (target.result.os.tag) {
+        .windows => .win32,
+        .freebsd, .netbsd, .dragonfly, .openbsd => .unix,
+        .linux => if (target.result.abi.isAndroid()) .android else .unix,
+        .macos => .macos,
+        else => @panic("unknown os"),
+    };
+
+    const config = b.addOptions();
+    config.addOption(Backend, "backend", backend);
+    config.addOption(Platform, "platform", platform);
+
+    config.addOption(
+        bool,
+        "debug",
+        optimize == .Debug or optimize == .ReleaseSafe,
+    );
+
+    config.addOption(
+        std.SemanticVersion,
+        "version",
+        try std.SemanticVersion.parse(manifest.version),
+    );
 
     const zora = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),
@@ -24,21 +57,17 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
 
         .imports = &.{
-            .{ .name = "options", .module = options.createModule() },
-
             .{
-                .name = "manifest",
-                .module = b.createModule(.{
-                    .root_source_file = b.path("build.zig.zon"),
-                }),
+                .name = "config",
+                .module = config.createModule(),
             },
-
             .{
                 .name = @tagName(backend),
                 .module = addTranslateHeaders(
                     b,
                     target,
                     optimize,
+                    platform,
                     backend,
                 ),
             },
@@ -60,13 +89,14 @@ fn addTranslateHeaders(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    backend: BackendType,
+    platform: Platform,
+    backend: Backend,
 ) *std.Build.Module {
     const use_gles = b.option(
         bool,
         "zora_opengl_use_gles",
         "Selects OpenGLES 2.0 instead of OpenGL 3.3 Core.",
-    ) orelse target.result.abi.isAndroid();
+    ) orelse (platform == .android);
 
     const translate = b.addTranslateC(.{
         .optimize = optimize,

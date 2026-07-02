@@ -408,7 +408,7 @@ inline fn callResultInner(
     }
 
     const result: Result = @enumFromInt(@call(.auto, function, args));
-    if (zora.builtin.debug and result != .success) {
+    if (zora.config.debug and result != .success) {
         log.warn("{s} call result: {s}", .{
             ctx,
             std.enums.tagName(Result, result) orelse "unknown",
