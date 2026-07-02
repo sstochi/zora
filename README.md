@@ -23,8 +23,8 @@ It is built using **[Zig Programming Language](https://ziglang.org/)**.
 
 ## Known limitations
 ### Reliance on `GLSL`
-The most straightforward way to write shaders for `zora` is to use **OpenGL Shading Langauge**. 
-
-Although **not strictly required**, some of the backends historically **support SPIR-V poorly** (`OpenGL` 4.5+) or **simply don't at all** (`OpenGL` < 4.5, `OpenGLES`), as such `zora` provides an ***optional*** way to attach `GLSL` text shader source.
-
 **This is not an issue if you're only targetting** `Vulkan`, but is still a notable limitation.
+
+**The most straightforward way** to write shaders for `zora` is to use **OpenGL Shading Langauge**. 
+
+While not strictly required, some of the backends **historically support SPIR-V poorly** (`OpenGL` 4.5+) or **simply don't at all** (`OpenGL` < 4.5, `OpenGLES`), as such `zora` provides an ***optional*** way to attach `GLSL` text shader source.
