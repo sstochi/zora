@@ -23,7 +23,7 @@ It is built using **[Zig Programming Language](https://ziglang.org/)**.
 
 ## 🖥️ Supported platforms
 ### 🥇 Tier 1
-Platforms that actively supported and tested:
+Platforms that are actively supported and tested:
   - `GNU/Linux`
   - `Android`
   - `FreeBSD`
