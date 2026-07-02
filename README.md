@@ -22,6 +22,11 @@ It is built using **[Zig Programming Language](https://ziglang.org/)**.
 - 📅 `OpenGLES` 2.0+ -- Good support for mobile, web (`WebGL`) and embedded.
 
 ## Known limitations
+### Initialization code is heavy on stack
+On some backends (like Vulkan), `zora` **internally pre-allocates a significant amount of space on stack upfront**. Depending on amount of stack space available during initialization phase, this could be a massive limitation. 
+
+**It's recommended that you initialize `zora` first before doing heavy stack allocations.** 
+
 ### Reliance on `GLSL`
 **This is not an issue if you're only targetting** `Vulkan`, but is still a notable limitation.
 
