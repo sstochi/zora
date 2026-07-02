@@ -163,14 +163,14 @@ pub fn create(adapter: *const Adapter, options: Options) Error!Self {
 
     return .{
         .chain_info = .{
-            .width = options.width,
-            .height = options.height,
             .vsync_mode = switch (mode_buffer[0]) {
                 vk.VK_PRESENT_MODE_FIFO_KHR => .enabled,
                 vk.VK_PRESENT_MODE_FIFO_RELAXED_KHR => .adaptive,
                 vk.VK_PRESENT_MODE_MAILBOX_KHR => .mailbox,
                 else => .disabled,
             },
+            .width = options.width,
+            .height = options.height,
         },
 
         .adapter = adapter,

@@ -382,7 +382,7 @@ fn createSurface(
     };
 }
 
-fn createSurfaceGeneric(
+inline fn createSurfaceGeneric(
     comptime name: [:0]const u8,
     instance: *const Instance,
     create_info: anytype,

@@ -12,6 +12,12 @@ const Error = zora.Shader.Error;
 const Options = zora.Shader.Options;
 const Info = zora.Shader.Info;
 
+const stage_types = struct {
+    const vertex = vk.VK_SHADER_STAGE_VERTEX_BIT;
+    const fragment = vk.VK_SHADER_STAGE_FRAGMENT_BIT;
+    const compute = vk.VK_SHADER_STAGE_COMPUTE_BIT;
+};
+
 const Stage = struct {
     create_info: vk.VkPipelineShaderStageCreateInfo,
     handle: vk.VkShaderModule,
@@ -22,12 +28,6 @@ stage_count: usize,
 adapter: *const Adapter,
 
 pub fn create(adapter: *const Adapter, options: Options) Error!Self {
-    const stage_types = struct {
-        const vertex = vk.VK_SHADER_STAGE_VERTEX_BIT;
-        const fragment = vk.VK_SHADER_STAGE_FRAGMENT_BIT;
-        const compute = vk.VK_SHADER_STAGE_COMPUTE_BIT;
-    };
-
     var stages: [3]Stage = undefined;
     var stage_count: usize = 0;
 
