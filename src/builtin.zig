@@ -5,17 +5,12 @@ const manifest = @import("manifest");
 
 pub const Backend = @TypeOf(options.backend);
 pub const Target = enum {
-    // Tier 1
-
     /// Linux, FreeBSD, OpenBSD, NetBSD
     unix,
     /// Google Android
     android,
     /// Microsoft Windows
     win32,
-
-    // Tier 2
-
     /// Apple MacOS
     macos,
 };
