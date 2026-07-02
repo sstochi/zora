@@ -91,9 +91,7 @@ const PhysicalDevice = struct {
         for (extensions) |ext| {
             for (0..ext_count) |j| {
                 const name: [*:0]const u8 = @ptrCast(&ext_buffer[j].extensionName);
-                if (std.mem.orderZ(u8, ext, name) == .eq) {
-                    break;
-                }
+                if (std.mem.orderZ(u8, ext, name) == .eq) break;
             } else {
                 // bail if haven't found even one
                 return null;

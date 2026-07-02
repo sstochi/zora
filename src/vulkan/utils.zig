@@ -55,7 +55,7 @@ pub const Result = enum(c_int) {
 
     _,
 
-    pub fn fatal(self: Result) bool {
+    pub inline fn fatal(self: Result) bool {
         return @intFromEnum(self) < 0;
     }
 };
