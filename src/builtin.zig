@@ -9,13 +9,13 @@ pub const Target = enum {
 
     /// Linux, FreeBSD, OpenBSD, NetBSD
     unix,
+    /// Google Android
+    android,
     /// Microsoft Windows
     win32,
 
     // Tier 2
 
-    /// Google Android
-    android,
     /// Apple MacOS
     macos,
 };
