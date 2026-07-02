@@ -168,7 +168,7 @@ get_proc_addr: GetInstanceProcAddr,
 dynlib: DynLib,
 
 pub fn create(_: Options) Error!Self {
-    const max_extensions: u32 = 1024;
+    const max_extensions: u32 = 512;
 
     log.info("loading vulkan lib ...", .{});
     var dynlib = try DynLib.open(library_name);
