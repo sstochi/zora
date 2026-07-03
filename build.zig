@@ -106,7 +106,6 @@ fn addTranslateHeaders(
             @tagName(backend),
         })),
     });
-
     translate.addIncludePath(b.path(b.fmt("headers/{s}", .{
         @tagName(backend),
     })));

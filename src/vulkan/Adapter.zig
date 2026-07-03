@@ -323,8 +323,11 @@ fn createSurface(
     instance: *const Instance,
     window_info: zora.WindowInfo,
 ) Error!vk.VkSurfaceKHR {
-    log.debug("creating vulkan surface ...", .{});
+    // alignCast checks for ptr alignment. In WINE, hwnd is treated
+    // as an ID rather than a pointer and can be misaligned.
+    @setRuntimeSafety(false);
 
+    log.debug("creating vulkan surface ...", .{});
     return try switch (config.platform) {
         .win32 => createSurfaceGeneric(
             "vkCreateWin32SurfaceKHR",

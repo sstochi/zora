@@ -3,15 +3,8 @@
 #include <vulkan/vulkan_core.h>
 
 #if defined(_WIN32)
-    typedef unsigned long DWORD;
-    typedef wchar_t* LPCWSTR;
-    typedef void* HINSTANCE;
-    typedef void* HMODULE;
-    typedef void* HANDLE;
-    typedef void* HMONITOR;
-    typedef struct _HWND* HWND;
-    typedef struct _SECURITY_ATTRIBUTES SECURITY_ATTRIBUTES;
-
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
     #include <vulkan/vulkan_win32.h>
 #elif defined(__ANDROID__)
     struct ANativeWindow;
@@ -21,12 +14,15 @@
 #elif defined(__unix__)
     #include <stdint.h>
 
+    typedef unsigned long XID;
     typedef struct _XDisplay Display;
-    typedef unsigned long Window;
-    typedef unsigned long VisualID;
+    typedef XID Window;
+    typedef XID VisualID;
+
     typedef struct xcb_connection_t xcb_connection_t;
     typedef uint32_t xcb_window_t;
     typedef uint32_t xcb_visualid_t;
+
     struct wl_display;
     struct wl_surface;
 
